@@ -6,17 +6,19 @@
   
   <title>flink的内存管理机制简单解析 | 源峰的blog</title>
   <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
-  <meta name="description" content="记录自己的一些感悟以及分享">
+  <meta name="description" content="Flink内存管理源码解读 flink版本1.13    在分布式计算引擎中，不管是flink、spark，mr等等使用jvm作为载体实现的框架中，对于整体的内存管理是一个很重要的部分，在大数据量下如何保证合理的使用，稳定的运行是各个框架的重点，本文将探究flink是如何对程序的内存进行一个管理。  从官网可以很直观和的看到flink的内存模型（本文只讲解taskmanager）  可见flink">
 <meta property="og:type" content="article">
 <meta property="og:title" content="flink的内存管理机制简单解析">
 <meta property="og:url" content="http://example.com/2022/01/29/flink%E7%9A%84%E5%86%85%E5%AD%98%E7%AE%A1%E7%90%86%E6%9C%BA%E5%88%B6%E7%AE%80%E5%8D%95%E8%A7%A3%E6%9E%90/index.html">
 <meta property="og:site_name" content="源峰的blog">
-<meta property="og:description" content="记录自己的一些感悟以及分享">
+<meta property="og:description" content="Flink内存管理源码解读 flink版本1.13    在分布式计算引擎中，不管是flink、spark，mr等等使用jvm作为载体实现的框架中，对于整体的内存管理是一个很重要的部分，在大数据量下如何保证合理的使用，稳定的运行是各个框架的重点，本文将探究flink是如何对程序的内存进行一个管理。  从官网可以很直观和的看到flink的内存模型（本文只讲解taskmanager）  可见flink">
 <meta property="og:locale" content="zh_CN">
+<meta property="og:image" content="http://example.com/2022/01/29/flink%E7%9A%84%E5%86%85%E5%AD%98%E7%AE%A1%E7%90%86%E6%9C%BA%E5%88%B6%E7%AE%80%E5%8D%95%E8%A7%A3%E6%9E%90/Flink%E5%86%85%E5%AD%98%E7%AE%A1%E7%90%86%E6%BA%90%E7%A0%81%E8%A7%A3%E8%AF%BB%20b8822995aa164fe7bd060a1f87e6d592/detailed-mem-model.svg">
 <meta property="article:published_time" content="2022-01-29T13:33:10.000Z">
-<meta property="article:modified_time" content="2022-01-29T13:33:10.274Z">
+<meta property="article:modified_time" content="2022-01-29T13:37:19.782Z">
 <meta property="article:author" content="Lime">
 <meta name="twitter:card" content="summary">
+<meta name="twitter:image" content="http://example.com/2022/01/29/flink%E7%9A%84%E5%86%85%E5%AD%98%E7%AE%A1%E7%90%86%E6%9C%BA%E5%88%B6%E7%AE%80%E5%8D%95%E8%A7%A3%E6%9E%90/Flink%E5%86%85%E5%AD%98%E7%AE%A1%E7%90%86%E6%BA%90%E7%A0%81%E8%A7%A3%E8%AF%BB%20b8822995aa164fe7bd060a1f87e6d592/detailed-mem-model.svg">
   
     <link rel="alternate" href="/atom.xml" title="源峰的blog" type="application/atom+xml">
   
@@ -95,11 +97,71 @@
     
     <div class="e-content article-entry" itemprop="articleBody">
       
-        
+        <h1 id="Flink内存管理源码解读"><a href="#Flink内存管理源码解读" class="headerlink" title="Flink内存管理源码解读"></a>Flink内存管理源码解读</h1><blockquote>
+<p>flink版本1.13</p>
+</blockquote>
+<pre><code>  在分布式计算引擎中，不管是flink、spark，mr等等使用jvm作为载体实现的框架中，对于整体的内存管理是一个很重要的部分，在大数据量下如何保证合理的使用，稳定的运行是各个框架的重点，本文将探究flink是如何对程序的内存进行一个管理。
+</code></pre>
+<p>从官网可以很直观和的看到flink的内存模型（本文只讲解taskmanager）</p>
+<p><img src="Flink%E5%86%85%E5%AD%98%E7%AE%A1%E7%90%86%E6%BA%90%E7%A0%81%E8%A7%A3%E8%AF%BB%20b8822995aa164fe7bd060a1f87e6d592/detailed-mem-model.svg" alt="detailed-mem-model.svg"></p>
+<p>可见flink在尽可能的尝试使用堆外内存来进行运算，都知道在jvm里面对内存的管理是自动的，在频繁的创建销毁对象的时候，监控分配都不是一件容易的事情，并且在堆类进行过度使用很容易造成oom等异常，所以需要对内存管理这一块进行一个特定的一个管理，而不能完全依靠jvm的内存回收机制。所以从底层上看，flink对内存的管理更像是cpp而不是java。</p>
+<p>flink对内存管理大部分依靠组件<code>MemoryManager</code>，从源码中的注释我们可以得知<code>MemoryManager</code>主要完成的工作，如下：</p>
+<figure class="highlight java"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment">/**</span></span><br><span class="line"><span class="comment"> * The memory manager governs the memory that Flink uses for sorting, hashing, caching or off-heap</span></span><br><span class="line"><span class="comment"> * state backends (e.g. RocksDB). Memory is represented either in&#123;<span class="doctag">@linkMemorySegment</span>&#125;s of equal</span></span><br><span class="line"><span class="comment"> * size or in reserved chunks of certain size. Operators allocate the memory either by requesting a</span></span><br><span class="line"><span class="comment"> * number of memory segments or by reserving chunks. Any allocated memory has to be released to be</span></span><br><span class="line"><span class="comment"> * reused later.</span></span><br><span class="line"><span class="comment"> *</span></span><br><span class="line"><span class="comment"> *&lt;p&gt;The memory segments are represented as off-heap unsafe memory regions (both via&#123;<span class="doctag">@link</span></span></span><br><span class="line"><span class="comment"> *MemorySegment&#125;). Releasing a memory segment will make it re-claimable by the garbage collector,</span></span><br><span class="line"><span class="comment"> * but does not necessarily immediately releases the underlying memory.</span></span><br><span class="line"><span class="comment"> */</span></span><br><span class="line"><span class="keyword">public</span> <span class="class"><span class="keyword">class</span> <span class="title">MemoryManager</span></span>&#123;&#125;</span><br></pre></td></tr></table></figure>
+
+<p>可以得知MemoryManager工作为：</p>
+<blockquote>
+<p>MemoryManager管理Flink用于排序、hash、缓存或堆外状态后端（例如RocksDB）的内存。内存可以用大小相等的{@link MemorySegment}表示，也可以用一定大小的保留块表示。操作员通过请求大量内存段或保留块来分配内存。任何分配的内存都必须释放，以便以后重新使用。</p>
+</blockquote>
+<p>可以看到注释可得，flink对内存的操作非常谨慎，使用者在使用之前需要申请分配内存，使用完成之后必须要手动释放。</p>
+<p><code>MemoryManager</code> 会在taskmanager启动的时候初始化，<code>MemoryManager</code> 数量取决于taskmanager一共有多少个<code>TaskSlot</code> 每一个TaskSlot都会有一个<code>MemoryManager</code>  </p>
+<figure class="highlight java"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br></pre></td><td class="code"><pre><span class="line"><span class="function"><span class="keyword">public</span> <span class="title">TaskSlot</span><span class="params">(</span></span></span><br><span class="line"><span class="params"><span class="function"><span class="keyword">final</span> <span class="keyword">int</span> index,</span></span></span><br><span class="line"><span class="params"><span class="function">        <span class="keyword">final</span> ResourceProfile resourceProfile,</span></span></span><br><span class="line"><span class="params"><span class="function">        <span class="keyword">final</span> <span class="keyword">int</span> memoryPageSize,</span></span></span><br><span class="line"><span class="params"><span class="function">        <span class="keyword">final</span> JobID jobId,</span></span></span><br><span class="line"><span class="params"><span class="function">        <span class="keyword">final</span> AllocationID allocationId,</span></span></span><br><span class="line"><span class="params"><span class="function">        <span class="keyword">final</span> Executor asyncExecutor)</span> </span>&#123;</span><br><span class="line"></span><br><span class="line"><span class="keyword">this</span>.index = index;</span><br><span class="line">    <span class="keyword">this</span>.resourceProfile = Preconditions.checkNotNull(resourceProfile);</span><br><span class="line">    <span class="keyword">this</span>.asyncExecutor = Preconditions.checkNotNull(asyncExecutor);</span><br><span class="line"></span><br><span class="line">    <span class="keyword">this</span>.tasks = <span class="keyword">new</span> HashMap&lt;&gt;(<span class="number">4</span>);</span><br><span class="line">    <span class="keyword">this</span>.state = TaskSlotState.ALLOCATED;</span><br><span class="line"></span><br><span class="line">    <span class="keyword">this</span>.jobId = jobId;</span><br><span class="line">    <span class="keyword">this</span>.allocationId = allocationId;</span><br><span class="line"></span><br><span class="line">    <span class="keyword">this</span>.memoryManager =createMemoryManager(resourceProfile, memoryPageSize);</span><br><span class="line"></span><br><span class="line">    <span class="keyword">this</span>.closingFuture = <span class="keyword">new</span> CompletableFuture&lt;&gt;();</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<figure class="highlight java"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br></pre></td><td class="code"><pre><span class="line"><span class="function"><span class="keyword">public</span> <span class="keyword">static</span> MemoryManager <span class="title">create</span><span class="params">(<span class="keyword">long</span> memorySize, <span class="keyword">int</span> pageSize)</span> </span>&#123;</span><br><span class="line"><span class="keyword">return</span> <span class="keyword">new</span> MemoryManager(memorySize, pageSize);</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<p>可以看到创建<code>MemoryManager</code> 会传入两个参数，一个是memorySize一个是pageSize，两个参数分别标识 <code>MemoryManager</code>  所管理的总的memorySize一个是pageSize。其中pageSize默认为32kb。</p>
+<blockquote>
+<p>pageSize是什么？</p>
+</blockquote>
+<p>程序在运行时往操作系统申请内存时，是一个一个page申请的，每一个page的大小是固定的，flink在这里借鉴了这一思想将内存申请也抽象为此，所以<code>MemoryManager</code> 对象中最终要的两个变量就是总内存大小和pageSize（每申请一块内存的大小）</p>
+<p>之前就已经提过了<code>MemoryManager</code> 会申请内存，其实就是申请一块一块pageSize大小的内</p>
+<p>pageSize，flink内部将这个每一块内存抽象为了<code>MemorySegment</code> 对象，<code>MemoryManager</code> 申请内存的方法为</p>
+<figure class="highlight java"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br></pre></td><td class="code"><pre><span class="line"><span class="function"><span class="keyword">public</span> List&lt;MemorySegment&gt; <span class="title">allocatePages</span><span class="params">(Object owner, <span class="keyword">int</span> numPages)</span></span></span><br><span class="line"><span class="function"><span class="keyword">throws</span> MemoryAllocationException</span>&#123;</span><br><span class="line">List&lt;MemorySegment&gt;segments = <span class="keyword">new</span> ArrayList&lt;&gt;(numPages);</span><br><span class="line">    allocatePages(owner, segments, numPages);</span><br><span class="line">    <span class="keyword">return</span> segments;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<p>其中numPages就是本次申请要申请的segment数量，返回的也是numPages个segment的集合，每一个segment代表的内存大小就是之前的pageSize</p>
+<p>接下来看看<code>MemorySegment</code> 对象</p>
+<figure class="highlight java"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br></pre></td><td class="code"><pre><span class="line"></span><br><span class="line"><span class="meta">@Nullable</span> <span class="keyword">private</span> <span class="keyword">final</span> <span class="keyword">byte</span>[] heapMemory;</span><br><span class="line"></span><br><span class="line"><span class="meta">@Nullable</span> <span class="keyword">private</span> ByteBuffer offHeapBuffer;</span><br><span class="line"></span><br><span class="line"><span class="keyword">private</span> <span class="keyword">long</span> address;</span><br><span class="line"></span><br><span class="line"><span class="keyword">private</span> <span class="keyword">final</span> <span class="keyword">long</span> addressLimit;</span><br><span class="line"></span><br><span class="line"><span class="keyword">private</span> <span class="keyword">final</span> <span class="keyword">int</span> size;</span><br><span class="line"></span><br><span class="line"><span class="meta">@Nullable</span> <span class="keyword">private</span> <span class="keyword">final</span> Object owner;</span><br><span class="line"></span><br><span class="line"><span class="meta">@Nullable</span> <span class="keyword">private</span> Runnable cleaner;</span><br><span class="line"></span><br></pre></td></tr></table></figure>
+
+<p>其中heapMemory和offHeapBuffer就是<code>MemorySegment</code> 所管理的内存，offHeapBuffer从字面意思就能看出来是表示堆外的内存 而heapMemory则表示堆内</p>
+<p><code>MemorySegmentFactory</code> 是创建<code>MemorySegment</code> 的工厂，它可以创建基于堆内的 也可以创建堆外的内存</p>
+<p>创建堆外的Memory</p>
+<figure class="highlight java"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br></pre></td><td class="code"><pre><span class="line"><span class="function"><span class="keyword">public</span> <span class="keyword">static</span> MemorySegment <span class="title">allocateOffHeapUnsafeMemory</span><span class="params">(</span></span></span><br><span class="line"><span class="params"><span class="function"><span class="keyword">int</span> size, Object owner, Runnable customCleanupAction)</span> </span>&#123;</span><br><span class="line"><span class="keyword">long</span> address = MemoryUtils.allocateUnsafe(size);</span><br><span class="line">    ByteBuffer offHeapBuffer = MemoryUtils.wrapUnsafeMemoryWithByteBuffer(address, size);</span><br><span class="line">    Runnable cleaner = MemoryUtils.createMemoryCleaner(address, customCleanupAction);</span><br><span class="line">    <span class="keyword">return</span> <span class="keyword">new</span> MemorySegment(offHeapBuffer, owner, <span class="keyword">false</span>, cleaner);</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<p>堆内</p>
+<figure class="highlight java"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br></pre></td><td class="code"><pre><span class="line"><span class="function"><span class="keyword">public</span> <span class="keyword">static</span> MemorySegment <span class="title">allocateUnpooledSegment</span><span class="params">(<span class="keyword">int</span> size, Object owner)</span> </span>&#123;</span><br><span class="line"><span class="keyword">return</span> <span class="keyword">new</span> MemorySegment(<span class="keyword">new</span> <span class="keyword">byte</span>[size], owner);</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<p>可以看到申请堆外内存需要传入一个cleaner对象，它适用于内存用完之后对内存进行一个回收，而堆内则不需要，他由jvm虚拟机自动进行一个回收。</p>
+<p>flink在什么地方使用这些内存？</p>
+<ol>
+<li><code>NetworkBuffer</code> ：flink在进行网络传输使用，每一个taskmanager在启动的时候都会生成一个<code>NetworkBufferPool</code>，在生成<code>NetworkBufferPool</code>时，会申请一定数量的内存用于网络传输，申请代码如下：</li>
+</ol>
+<figure class="highlight java"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">try</span>&#123;</span><br><span class="line"><span class="keyword">for</span>(<span class="keyword">int</span> i = <span class="number">0</span>; i &lt; numberOfSegmentsToAllocate; i++) &#123;</span><br><span class="line">availableMemorySegments.add(</span><br><span class="line">MemorySegmentFactory.allocateUnpooledOffHeapMemory(segmentSize, <span class="keyword">null</span>));</span><br><span class="line">&#125;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<p>  其中申请的segmentSize为numberOfSegmentsToAllocate，每一块的大小为segmentSize，flink网络算子之间的数据传输就是依靠这些申请而来的内存，这两个参数是怎么来的呢？是通过对最大的网络内存除以pagesize分别得到的segmentSize就等于segmentSize 最大网络内存可以通过参数taskmanager.memory.network.fraction指定。而且可以看allocateUnpooledOffHeapMemory方法申请的是堆外内存，说明flink网络传输所使用的内存是堆外内存,并且这些内存在申请的时候，并不像之前allocateOffHeapUnsafeMemory 方法那样需要生成一个cleaner 对象，说明这些网络内存申请了就不用销毁而是伴随着taskmanager的整个生命周期</p>
+<p>同理，在taskmanager中还有其他在taskmanager一初始化就申请内存并且伴随整个taskmanager生命周期的segmentbufferpool，具体代码我不过度介绍了。如：</p>
+<p><code>BatchShuffleReadBufferPool： **一个固定大小的 MemorySegment池，由批处理用于shuffle数据读取**</code></p>
+<ol>
+<li>状态后端和python的UDf，RocksDB State Backend 的本地内存，flink在使用rocksdb作为状态后端存储的时候rocksdb会使用这部分内存。同时python的UDF也使用的是这部分的内存，他们申请内存都是通过MemoryManager 的getSharedMemoryResourceForManagedMemory方法，这里不做详细说明，感兴趣的可以看一下这部分源码，</li>
+</ol>
+<figure class="highlight java"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">public</span>&lt;T extends AutoCloseable&gt;</span><br><span class="line">OpaqueMemoryResource&lt;T&gt;getSharedMemoryResourceForManagedMemory(</span><br><span class="line">String type,</span><br><span class="line">                LongFunctionWithException&lt;T, Exception&gt;initializer,</span><br><span class="line">                <span class="keyword">double</span> fractionToInitializeWith)</span><br><span class="line"><span class="keyword">throws</span> Exception&#123;&#125;</span><br></pre></td></tr></table></figure>
+
+<ol>
+<li>批处理中的排序，分组和缓存部分，上面已经说过，每个slot都会分配一个MemoryManager ，而在task运行过程中，在批处理中，往往存在对大量数据进行排序或者分组的操作，这些操作需要申请一定数量的内存进行。也会通过MemoryManager 进行内存的申请。</li>
+</ol>
+
       
     </div>
     <footer class="article-footer">
-      <a data-url="http://example.com/2022/01/29/flink%E7%9A%84%E5%86%85%E5%AD%98%E7%AE%A1%E7%90%86%E6%9C%BA%E5%88%B6%E7%AE%80%E5%8D%95%E8%A7%A3%E6%9E%90/" data-id="ckyzvkeb30000dj9j2w2k8pe5" data-title="flink的内存管理机制简单解析" class="article-share-link">分享</a>
+      <a data-url="http://example.com/2022/01/29/flink%E7%9A%84%E5%86%85%E5%AD%98%E7%AE%A1%E7%90%86%E6%9C%BA%E5%88%B6%E7%AE%80%E5%8D%95%E8%A7%A3%E6%9E%90/" data-id="ckyzvppji0000hg9jf88v84s4" data-title="flink的内存管理机制简单解析" class="article-share-link">分享</a>
       
       
       
