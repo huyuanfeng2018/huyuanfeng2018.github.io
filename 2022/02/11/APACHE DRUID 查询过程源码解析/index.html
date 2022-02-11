@@ -13,29 +13,29 @@
 <meta property="og:site_name" content="源峰的blog">
 <meta property="og:description" content="APACHE DRUID 查询过程源码解析​        Apache Druid 是一个集时间序列数据库、数据仓库和全文检索系统特点于一体的分析性数据平台。本文将从整体到源码级别讲解整个查询流程 整体查询逻辑架构 ​    druid最原生的查询方式是通过http进行查询，也可以通过sql查询，sql支持大部分查询，但是部分语法只能通过http的方式查询，本节将对druid的http整体的查询">
 <meta property="og:locale" content="zh_CN">
-<meta property="og:image" content="http://example.com/APACHE-DRUID-%E6%9F%A5%E8%AF%A2%E8%BF%87%E7%A8%8B%E6%BA%90%E7%A0%81%E8%A7%A3%E6%9E%90/image-20220211222352338.png">
-<meta property="og:image" content="http://example.com/APACHE-DRUID-%E6%9F%A5%E8%AF%A2%E8%BF%87%E7%A8%8B%E6%BA%90%E7%A0%81%E8%A7%A3%E6%9E%90/image-20220211223604776.png">
-<meta property="og:image" content="http://example.com/APACHE-DRUID-%E6%9F%A5%E8%AF%A2%E8%BF%87%E7%A8%8B%E6%BA%90%E7%A0%81%E8%A7%A3%E6%9E%90/image-20220211224146896.png">
-<meta property="og:image" content="http://example.com/APACHE-DRUID-%E6%9F%A5%E8%AF%A2%E8%BF%87%E7%A8%8B%E6%BA%90%E7%A0%81%E8%A7%A3%E6%9E%90/image-20220211224212898.png">
-<meta property="og:image" content="http://example.com/APACHE-DRUID-%E6%9F%A5%E8%AF%A2%E8%BF%87%E7%A8%8B%E6%BA%90%E7%A0%81%E8%A7%A3%E6%9E%90/image-20220211224312529.png">
-<meta property="og:image" content="http://example.com/APACHE-DRUID-%E6%9F%A5%E8%AF%A2%E8%BF%87%E7%A8%8B%E6%BA%90%E7%A0%81%E8%A7%A3%E6%9E%90/image-20220211224501518.png">
-<meta property="og:image" content="http://example.com/APACHE-DRUID-%E6%9F%A5%E8%AF%A2%E8%BF%87%E7%A8%8B%E6%BA%90%E7%A0%81%E8%A7%A3%E6%9E%90/image-20220211224514503.png">
-<meta property="og:image" content="http://example.com/APACHE-DRUID-%E6%9F%A5%E8%AF%A2%E8%BF%87%E7%A8%8B%E6%BA%90%E7%A0%81%E8%A7%A3%E6%9E%90/image-20220211224539528.png">
-<meta property="og:image" content="http://example.com/APACHE-DRUID-%E6%9F%A5%E8%AF%A2%E8%BF%87%E7%A8%8B%E6%BA%90%E7%A0%81%E8%A7%A3%E6%9E%90/image-20220211224551432.png">
-<meta property="og:image" content="http://example.com/APACHE-DRUID-%E6%9F%A5%E8%AF%A2%E8%BF%87%E7%A8%8B%E6%BA%90%E7%A0%81%E8%A7%A3%E6%9E%90/image-20220211224555448.png">
-<meta property="og:image" content="http://example.com/APACHE-DRUID-%E6%9F%A5%E8%AF%A2%E8%BF%87%E7%A8%8B%E6%BA%90%E7%A0%81%E8%A7%A3%E6%9E%90/image-20220211224614911.png">
-<meta property="og:image" content="http://example.com/APACHE-DRUID-%E6%9F%A5%E8%AF%A2%E8%BF%87%E7%A8%8B%E6%BA%90%E7%A0%81%E8%A7%A3%E6%9E%90/image-20220211224626074.png">
-<meta property="og:image" content="http://example.com/APACHE-DRUID-%E6%9F%A5%E8%AF%A2%E8%BF%87%E7%A8%8B%E6%BA%90%E7%A0%81%E8%A7%A3%E6%9E%90/image-20220211224637342.png">
-<meta property="og:image" content="http://example.com/APACHE-DRUID-%E6%9F%A5%E8%AF%A2%E8%BF%87%E7%A8%8B%E6%BA%90%E7%A0%81%E8%A7%A3%E6%9E%90/image-20220211224735832.png">
-<meta property="og:image" content="http://example.com/APACHE-DRUID-%E6%9F%A5%E8%AF%A2%E8%BF%87%E7%A8%8B%E6%BA%90%E7%A0%81%E8%A7%A3%E6%9E%90/image-20220211224747937.png">
-<meta property="og:image" content="http://example.com/APACHE-DRUID-%E6%9F%A5%E8%AF%A2%E8%BF%87%E7%A8%8B%E6%BA%90%E7%A0%81%E8%A7%A3%E6%9E%90/image-20220211224839104.png">
-<meta property="og:image" content="http://example.com/APACHE-DRUID-%E6%9F%A5%E8%AF%A2%E8%BF%87%E7%A8%8B%E6%BA%90%E7%A0%81%E8%A7%A3%E6%9E%90/image-20220211224911363.png">
-<meta property="og:image" content="http://example.com/APACHE-DRUID-%E6%9F%A5%E8%AF%A2%E8%BF%87%E7%A8%8B%E6%BA%90%E7%A0%81%E8%A7%A3%E6%9E%90/image-20220211224946026.png">
+<meta property="og:image" content="http://example.com/2022/02/11/APACHE%20DRUID%20%E6%9F%A5%E8%AF%A2%E8%BF%87%E7%A8%8B%E6%BA%90%E7%A0%81%E8%A7%A3%E6%9E%90/image-20220211222352338.png">
+<meta property="og:image" content="http://example.com/2022/02/11/APACHE%20DRUID%20%E6%9F%A5%E8%AF%A2%E8%BF%87%E7%A8%8B%E6%BA%90%E7%A0%81%E8%A7%A3%E6%9E%90/image-20220211223604776.png">
+<meta property="og:image" content="http://example.com/2022/02/11/APACHE%20DRUID%20%E6%9F%A5%E8%AF%A2%E8%BF%87%E7%A8%8B%E6%BA%90%E7%A0%81%E8%A7%A3%E6%9E%90/image-20220211224146896.png">
+<meta property="og:image" content="http://example.com/2022/02/11/APACHE%20DRUID%20%E6%9F%A5%E8%AF%A2%E8%BF%87%E7%A8%8B%E6%BA%90%E7%A0%81%E8%A7%A3%E6%9E%90/image-20220211224212898.png">
+<meta property="og:image" content="http://example.com/2022/02/11/APACHE%20DRUID%20%E6%9F%A5%E8%AF%A2%E8%BF%87%E7%A8%8B%E6%BA%90%E7%A0%81%E8%A7%A3%E6%9E%90/image-20220211224312529.png">
+<meta property="og:image" content="http://example.com/2022/02/11/APACHE%20DRUID%20%E6%9F%A5%E8%AF%A2%E8%BF%87%E7%A8%8B%E6%BA%90%E7%A0%81%E8%A7%A3%E6%9E%90/image-20220211224501518.png">
+<meta property="og:image" content="http://example.com/2022/02/11/APACHE%20DRUID%20%E6%9F%A5%E8%AF%A2%E8%BF%87%E7%A8%8B%E6%BA%90%E7%A0%81%E8%A7%A3%E6%9E%90/image-20220211224514503.png">
+<meta property="og:image" content="http://example.com/2022/02/11/APACHE%20DRUID%20%E6%9F%A5%E8%AF%A2%E8%BF%87%E7%A8%8B%E6%BA%90%E7%A0%81%E8%A7%A3%E6%9E%90/image-20220211224539528.png">
+<meta property="og:image" content="http://example.com/2022/02/11/APACHE%20DRUID%20%E6%9F%A5%E8%AF%A2%E8%BF%87%E7%A8%8B%E6%BA%90%E7%A0%81%E8%A7%A3%E6%9E%90/image-20220211224551432.png">
+<meta property="og:image" content="http://example.com/2022/02/11/APACHE%20DRUID%20%E6%9F%A5%E8%AF%A2%E8%BF%87%E7%A8%8B%E6%BA%90%E7%A0%81%E8%A7%A3%E6%9E%90/image-20220211224555448.png">
+<meta property="og:image" content="http://example.com/2022/02/11/APACHE%20DRUID%20%E6%9F%A5%E8%AF%A2%E8%BF%87%E7%A8%8B%E6%BA%90%E7%A0%81%E8%A7%A3%E6%9E%90/image-20220211224614911.png">
+<meta property="og:image" content="http://example.com/2022/02/11/APACHE%20DRUID%20%E6%9F%A5%E8%AF%A2%E8%BF%87%E7%A8%8B%E6%BA%90%E7%A0%81%E8%A7%A3%E6%9E%90/image-20220211224626074.png">
+<meta property="og:image" content="http://example.com/2022/02/11/APACHE%20DRUID%20%E6%9F%A5%E8%AF%A2%E8%BF%87%E7%A8%8B%E6%BA%90%E7%A0%81%E8%A7%A3%E6%9E%90/image-20220211224637342.png">
+<meta property="og:image" content="http://example.com/2022/02/11/APACHE%20DRUID%20%E6%9F%A5%E8%AF%A2%E8%BF%87%E7%A8%8B%E6%BA%90%E7%A0%81%E8%A7%A3%E6%9E%90/image-20220211224735832.png">
+<meta property="og:image" content="http://example.com/2022/02/11/APACHE%20DRUID%20%E6%9F%A5%E8%AF%A2%E8%BF%87%E7%A8%8B%E6%BA%90%E7%A0%81%E8%A7%A3%E6%9E%90/image-20220211224747937.png">
+<meta property="og:image" content="http://example.com/2022/02/11/APACHE%20DRUID%20%E6%9F%A5%E8%AF%A2%E8%BF%87%E7%A8%8B%E6%BA%90%E7%A0%81%E8%A7%A3%E6%9E%90/image-20220211224839104.png">
+<meta property="og:image" content="http://example.com/2022/02/11/APACHE%20DRUID%20%E6%9F%A5%E8%AF%A2%E8%BF%87%E7%A8%8B%E6%BA%90%E7%A0%81%E8%A7%A3%E6%9E%90/image-20220211224911363.png">
+<meta property="og:image" content="http://example.com/2022/02/11/APACHE%20DRUID%20%E6%9F%A5%E8%AF%A2%E8%BF%87%E7%A8%8B%E6%BA%90%E7%A0%81%E8%A7%A3%E6%9E%90/image-20220211224946026.png">
 <meta property="article:published_time" content="2022-02-11T14:22:16.742Z">
-<meta property="article:modified_time" content="2022-02-11T15:10:47.783Z">
+<meta property="article:modified_time" content="2022-02-11T15:12:10.213Z">
 <meta property="article:author" content="Lime">
 <meta name="twitter:card" content="summary">
-<meta name="twitter:image" content="http://example.com/APACHE-DRUID-%E6%9F%A5%E8%AF%A2%E8%BF%87%E7%A8%8B%E6%BA%90%E7%A0%81%E8%A7%A3%E6%9E%90/image-20220211222352338.png">
+<meta name="twitter:image" content="http://example.com/2022/02/11/APACHE%20DRUID%20%E6%9F%A5%E8%AF%A2%E8%BF%87%E7%A8%8B%E6%BA%90%E7%A0%81%E8%A7%A3%E6%9E%90/image-20220211222352338.png">
   
     <link rel="alternate" href="/atom.xml" title="源峰的blog" type="application/atom+xml">
   
@@ -105,7 +105,7 @@
     <div class="e-content article-entry" itemprop="articleBody">
       
         <h2 id="APACHE-DRUID-查询过程源码解析"><a href="#APACHE-DRUID-查询过程源码解析" class="headerlink" title="APACHE DRUID 查询过程源码解析"></a>APACHE DRUID 查询过程源码解析</h2><p>​        Apache Druid 是一个集时间序列数据库、数据仓库和全文检索系统特点于一体的分析性数据平台。本文将从整体到源码级别讲解整个查询流程</p>
-<h3 id="整体查询逻辑架构"><a href="#整体查询逻辑架构" class="headerlink" title="整体查询逻辑架构"></a>整体查询逻辑架构</h3><p><img src="/./APACHE-DRUID-%E6%9F%A5%E8%AF%A2%E8%BF%87%E7%A8%8B%E6%BA%90%E7%A0%81%E8%A7%A3%E6%9E%90/image-20220211222352338.png" alt="image-20220211222352338"></p>
+<h3 id="整体查询逻辑架构"><a href="#整体查询逻辑架构" class="headerlink" title="整体查询逻辑架构"></a>整体查询逻辑架构</h3><p><img src="/2022/02/11/APACHE%20DRUID%20%E6%9F%A5%E8%AF%A2%E8%BF%87%E7%A8%8B%E6%BA%90%E7%A0%81%E8%A7%A3%E6%9E%90/image-20220211222352338.png" alt="image-20220211222352338"></p>
 <p>​    druid最原生的查询方式是通过http进行查询，也可以通过sql查询，sql支持大部分查询，但是部分语法只能通过http的方式查询，本节将对druid的http整体的查询流程进行分析，方便开发者理解。</p>
 <p>​    用户在发送查询请求到broker端之后，broker节点会对请求进行解析处理（主要根据查询的interval和segment将查询拆分成多个子查询）之后发送到对应的his节点和实时task进行查询。最后再将所有的数据结果合并返回用户。</p>
 <h3 id="broker查询流程"><a href="#broker查询流程" class="headerlink" title="broker查询流程"></a>broker查询流程</h3><p>​    broker端的查询流程主要是根据查询的interval转换成不同segement的子查询发送到his端和task端，并根据它们返回数据结果进行合并，最后返回给用户。</p>
@@ -124,7 +124,7 @@
 </li>
 </ul>
 <p>  请求整体的时序图如下：</p>
-<p>  <img src="/./APACHE-DRUID-%E6%9F%A5%E8%AF%A2%E8%BF%87%E7%A8%8B%E6%BA%90%E7%A0%81%E8%A7%A3%E6%9E%90/image-20220211223604776.png" alt="image-20220211223604776"></p>
+<p>  <img src="/2022/02/11/APACHE%20DRUID%20%E6%9F%A5%E8%AF%A2%E8%BF%87%E7%A8%8B%E6%BA%90%E7%A0%81%E8%A7%A3%E6%9E%90/image-20220211223604776.png" alt="image-20220211223604776"></p>
 <p>请求代码处理逻辑：</p>
 <ul>
 <li>QueryResource的doPost方法中调用queryLifecycle.initialize初始化QueryLifecycle，使用UUID的方式生成唯一的queryId;</li>
@@ -152,9 +152,9 @@
 <li>LuceneDruidModule：主要用于适配Druid和Lucene的读写接口。</li>
 <li>LuceneQueryCoreModule：主要是实现了基于Lucene的一些聚合器。</li>
 </ul>
-<h4 id="historical处理请求整体流程"><a href="#historical处理请求整体流程" class="headerlink" title="historical处理请求整体流程"></a>historical处理请求整体流程</h4><p><img src="/./APACHE-DRUID-%E6%9F%A5%E8%AF%A2%E8%BF%87%E7%A8%8B%E6%BA%90%E7%A0%81%E8%A7%A3%E6%9E%90/image-20220211224146896.png" alt="image-20220211224146896"></p>
+<h4 id="historical处理请求整体流程"><a href="#historical处理请求整体流程" class="headerlink" title="historical处理请求整体流程"></a>historical处理请求整体流程</h4><p><img src="/2022/02/11/APACHE%20DRUID%20%E6%9F%A5%E8%AF%A2%E8%BF%87%E7%A8%8B%E6%BA%90%E7%A0%81%E8%A7%A3%E6%9E%90/image-20220211224146896.png" alt="image-20220211224146896"></p>
 <p>​    his节点的查询流程和broker入口一致，通过QueryResource的dopost方法进入，区别在于这里的****QuerySegmentWalker*<em><strong>对象是由容器注入的，在broker端，会注入的walker为</strong></em>*ClientQuerySegmentWalker****，而在historcal端注入的walker为ServerManager。代码处理逻辑如下：</p>
-<p><img src="/./APACHE-DRUID-%E6%9F%A5%E8%AF%A2%E8%BF%87%E7%A8%8B%E6%BA%90%E7%A0%81%E8%A7%A3%E6%9E%90/image-20220211224212898.png" alt="image-20220211224212898"></p>
+<p><img src="/2022/02/11/APACHE%20DRUID%20%E6%9F%A5%E8%AF%A2%E8%BF%87%E7%A8%8B%E6%BA%90%E7%A0%81%E8%A7%A3%E6%9E%90/image-20220211224212898.png" alt="image-20220211224212898"></p>
 <p>​    由于在QueryWalker前的处理逻辑与broker的大致相同，这里的查询逻辑从ServerManager的getQueryRunnerForSegments方法开始说明，具体逻辑如下：</p>
 <ol>
 <li>在getQueryRunnerForSegments方法判断当前的查询类型，取出对应的QueryRunnerFactory和toolChest。</li>
@@ -168,7 +168,7 @@
 <li><p> mergeRunners：大部分场景下会查询多个segment，createRunner方法根据传入的QueryAdapter分片创建了QueryRunner,mergeRunner方法会将这些QueryRunner提交给ExecutorService并发执行，最后合并其返回结果。不同类型的查询设计了不同类型的QueryRunnerFactory,并且在LuceneDruidModule中绑定，如下图所示：</p>
 </li>
 </ul>
-<p>  <img src="/./APACHE-DRUID-%E6%9F%A5%E8%AF%A2%E8%BF%87%E7%A8%8B%E6%BA%90%E7%A0%81%E8%A7%A3%E6%9E%90/image-20220211224312529.png" alt="image-20220211224312529"></p>
+<p>  <img src="/2022/02/11/APACHE%20DRUID%20%E6%9F%A5%E8%AF%A2%E8%BF%87%E7%A8%8B%E6%BA%90%E7%A0%81%E8%A7%A3%E6%9E%90/image-20220211224312529.png" alt="image-20220211224312529"></p>
 <ol start="2">
 <li>根据传入query里面的segment集合，QueryRunnerFactory给每个segment创建一个queryRunner去执行查询逻辑；</li>
 </ol>
@@ -203,48 +203,48 @@
 </li>
 </ol>
 <h4 id="详细解析"><a href="#详细解析" class="headerlink" title="详细解析"></a>详细解析</h4><p>下面对getQueryRunnerForSegments方法进行一个解析：</p>
-<p><img src="/./APACHE-DRUID-%E6%9F%A5%E8%AF%A2%E8%BF%87%E7%A8%8B%E6%BA%90%E7%A0%81%E8%A7%A3%E6%9E%90/image-20220211224501518.png" alt="image-20220211224501518"></p>
+<p><img src="/2022/02/11/APACHE%20DRUID%20%E6%9F%A5%E8%AF%A2%E8%BF%87%E7%A8%8B%E6%BA%90%E7%A0%81%E8%A7%A3%E6%9E%90/image-20220211224501518.png" alt="image-20220211224501518"></p>
 <p>首先会获取QueryRunnerFactory，在tindex中，每种查询类型都有属于自己的QueryRunnerFactory，并且这些factory都是单例对象，并且通过guice注入，这里conglomerate.findFactory(query);就是通过query类型获取对应的QueryRunnerFactory。</p>
 <p>在QueryRunnerFactory这个接口中有三个方法</p>
-<p><img src="/./APACHE-DRUID-%E6%9F%A5%E8%AF%A2%E8%BF%87%E7%A8%8B%E6%BA%90%E7%A0%81%E8%A7%A3%E6%9E%90/image-20220211224514503.png" alt="image-20220211224514503"></p>
+<p><img src="/2022/02/11/APACHE%20DRUID%20%E6%9F%A5%E8%AF%A2%E8%BF%87%E7%A8%8B%E6%BA%90%E7%A0%81%E8%A7%A3%E6%9E%90/image-20220211224514503.png" alt="image-20220211224514503"></p>
 <ul>
 <li> createRunner：通过传入一个queryAdapter对象返回一个QueryRunner。queryAdapter字面意思为查询适配，实际上代表一个segment引用，一个queryAdapter对象实际上就表示一个segment，其返回的QueryRunner中就包含了对这个segment的查询逻辑。</li>
 <li> mergeRunners：此方法包含两个参数，queryExecutor表示执行查询的线程池，queryRunners则就是createRunner生成的QueryRunner集合，一般情况下在查询时候会有多个segment段一起并发执行查询，mergeRunners方法就是执行这些查询的入口。</li>
 <li> getToolchest：此方法用于获取对应查询类型的QueryToolChest，每一个查询类型都有自己对应的QueryToolChest，QueryToolChest对象也是单例对象并且通过guice注入。</li>
 </ul>
-<p><img src="/./APACHE-DRUID-%E6%9F%A5%E8%AF%A2%E8%BF%87%E7%A8%8B%E6%BA%90%E7%A0%81%E8%A7%A3%E6%9E%90/image-20220211224539528.png" alt="image-20220211224539528"></p>
+<p><img src="/2022/02/11/APACHE%20DRUID%20%E6%9F%A5%E8%AF%A2%E8%BF%87%E7%A8%8B%E6%BA%90%E7%A0%81%E8%A7%A3%E6%9E%90/image-20220211224539528.png" alt="image-20220211224539528"></p>
 <p>​    这部分是构建queryRunners，每有一个segment都会对应有一个queryrunner,这里主要调用了buildAndDecorateQueryRunner方法来构建queryrunner，下面看看这个方法体中的实现：</p>
-<p><img src="/./APACHE-DRUID-%E6%9F%A5%E8%AF%A2%E8%BF%87%E7%A8%8B%E6%BA%90%E7%A0%81%E8%A7%A3%E6%9E%90/image-20220211224551432.png" alt="image-20220211224551432"></p>
-<p><img src="/./APACHE-DRUID-%E6%9F%A5%E8%AF%A2%E8%BF%87%E7%A8%8B%E6%BA%90%E7%A0%81%E8%A7%A3%E6%9E%90/image-20220211224555448.png" alt="image-20220211224555448"></p>
+<p><img src="/2022/02/11/APACHE%20DRUID%20%E6%9F%A5%E8%AF%A2%E8%BF%87%E7%A8%8B%E6%BA%90%E7%A0%81%E8%A7%A3%E6%9E%90/image-20220211224551432.png" alt="image-20220211224551432"></p>
+<p><img src="/2022/02/11/APACHE%20DRUID%20%E6%9F%A5%E8%AF%A2%E8%BF%87%E7%A8%8B%E6%BA%90%E7%A0%81%E8%A7%A3%E6%9E%90/image-20220211224555448.png" alt="image-20220211224555448"></p>
 <p>初始化SpecificSegmentSpec：表示一个segment的唯一标识，可以获取segment的interval、segmentid等</p>
-<p><img src="/./APACHE-DRUID-%E6%9F%A5%E8%AF%A2%E8%BF%87%E7%A8%8B%E6%BA%90%E7%A0%81%E8%A7%A3%E6%9E%90/image-20220211224614911.png" alt="image-20220211224614911"></p>
+<p><img src="/2022/02/11/APACHE%20DRUID%20%E6%9F%A5%E8%AF%A2%E8%BF%87%E7%A8%8B%E6%BA%90%E7%A0%81%E8%A7%A3%E6%9E%90/image-20220211224614911.png" alt="image-20220211224614911"></p>
 <p>通过包装器模式构建整个执行链条，最终返回SetAndVerifyContextQueryRunner。如CachingQueryRunner中入参会传入metricsEmittingQueryRunner，而在CachingQueryRunner的run方法中：</p>
-<p><img src="/./APACHE-DRUID-%E6%9F%A5%E8%AF%A2%E8%BF%87%E7%A8%8B%E6%BA%90%E7%A0%81%E8%A7%A3%E6%9E%90/image-20220211224626074.png" alt="image-20220211224626074"></p>
+<p><img src="/2022/02/11/APACHE%20DRUID%20%E6%9F%A5%E8%AF%A2%E8%BF%87%E7%A8%8B%E6%BA%90%E7%A0%81%E8%A7%A3%E6%9E%90/image-20220211224626074.png" alt="image-20220211224626074"></p>
 <p>执行判断判定未开启populateCache的话会直接调用base.run(queryPlus, responseContext)，而base对象则是传入的ueryRunner。</p>
 <p>在构建完成所有segment的QueryRunner之后，会将所有的QueryRunner进行一个合并：</p>
-<p><img src="/./APACHE-DRUID-%E6%9F%A5%E8%AF%A2%E8%BF%87%E7%A8%8B%E6%BA%90%E7%A0%81%E8%A7%A3%E6%9E%90/image-20220211224637342.png" alt="image-20220211224637342"></p>
+<p><img src="/2022/02/11/APACHE%20DRUID%20%E6%9F%A5%E8%AF%A2%E8%BF%87%E7%A8%8B%E6%BA%90%E7%A0%81%E8%A7%A3%E6%9E%90/image-20220211224637342.png" alt="image-20220211224637342"></p>
 <p>​    通过调用factory.mergeRunners对上一步生成的QueryQunners构建执行计划并且调用toolChest的mergeResults方法对结果进行再次的聚合，其实到最后整个查询的入口点就在toolChest.mergeResults方法中。</p>
 <p>toolChest.mergeResults(factory.mergeRunners(exec, queryRunners))这段代码就可以看出查询的执行流程了，其中exec是一个线程池，线程池的数量通过参数druid.processing.numThreads设定，表示可用于并行处理段的处理线程数。我们的经验法则是num_cores-1，这意味着即使在重载情况下，仍有一个core可用于执行后台任务，如与ZooKeeper交谈和拉下片段。如果只有一个core可用，则此属性的默认值为1。建议设置为cpu核数减1。</p>
 <p>​    针对与不同的查询类型，其构建的queryRunner对象不同，queryRunner其实可以看做一个函数，这些流程其实都是在构建queryRunner的执行链条，最终都是由QueryPlus的run方法来触发这些queryRunner执行。</p>
 <h4 id="realtime节点查询流程"><a href="#realtime节点查询流程" class="headerlink" title="realtime节点查询流程"></a>realtime节点查询流程</h4><p>​    流程前部分和his、broker一样，只是segmentwalker不同，在realtime节点，使用的是RealtimeManager，现在看看它的getQueryRunnerForIntervals方法：</p>
-<p><img src="/./APACHE-DRUID-%E6%9F%A5%E8%AF%A2%E8%BF%87%E7%A8%8B%E6%BA%90%E7%A0%81%E8%A7%A3%E6%9E%90/image-20220211224735832.png" alt="image-20220211224735832"></p>
+<p><img src="/2022/02/11/APACHE%20DRUID%20%E6%9F%A5%E8%AF%A2%E8%BF%87%E7%A8%8B%E6%BA%90%E7%A0%81%E8%A7%A3%E6%9E%90/image-20220211224735832.png" alt="image-20220211224735832"></p>
 <p>​    相比his节点来说简单多了，其中关键在于fireChief.getQueryRunner(query)这里。FireChief是实时接入数据的一个线程，用于实时的接入数据，getQueryRunner如下：</p>
-<p><img src="/./APACHE-DRUID-%E6%9F%A5%E8%AF%A2%E8%BF%87%E7%A8%8B%E6%BA%90%E7%A0%81%E8%A7%A3%E6%9E%90/image-20220211224747937.png" alt="image-20220211224747937"></p>
+<p><img src="/2022/02/11/APACHE%20DRUID%20%E6%9F%A5%E8%AF%A2%E8%BF%87%E7%A8%8B%E6%BA%90%E7%A0%81%E8%A7%A3%E6%9E%90/image-20220211224747937.png" alt="image-20220211224747937"></p>
 <p>​    最终调用的是plumber.getQueryRunner(query)，其中plumber是接入数据的任务抽象，在实时接入任务时他的实现为AppenderatorPlumber，可以看做一个可追加数据的segment,对应QuerySegmentWalker为LuceneAppenderator。在LuceneAppenderator.getQueryRunnerForSegments方法中封装了具体逻辑，跟his逻辑类似这里不做详细阐述，请自行查看。</p>
 <h4 id="join查询流程"><a href="#join查询流程" class="headerlink" title="join查询流程"></a>join查询流程</h4><p>join的详细设计可以参考社区的proposal:</p>
 <p><a target="_blank" rel="noopener" href="https://gist.github.com/gianm/39548daef74f0373b3c87056e3db4627">https://gist.github.com/gianm/39548daef74f0373b3c87056e3db4627</a></p>
 <p>总体而言，tindex由于使用的是scatter-gather查询模型，目前tindex会把join转化为子查询。</p>
 <p>以 select * from A join B 为例，在tindex中会转化为select * from A join (select * from B)。该查询的处理流程如下：</p>
-<p><img src="/./APACHE-DRUID-%E6%9F%A5%E8%AF%A2%E8%BF%87%E7%A8%8B%E6%BA%90%E7%A0%81%E8%A7%A3%E6%9E%90/image-20220211224839104.png" alt="image-20220211224839104"></p>
+<p><img src="/2022/02/11/APACHE%20DRUID%20%E6%9F%A5%E8%AF%A2%E8%BF%87%E7%A8%8B%E6%BA%90%E7%A0%81%E8%A7%A3%E6%9E%90/image-20220211224839104.png" alt="image-20220211224839104"></p>
 <h5 id="broker处理流程"><a href="#broker处理流程" class="headerlink" title="broker处理流程"></a>broker处理流程</h5><p>​    druid的join需要先经过broker节点，把维表的数据全部查询出来放置到内存中，转化为InlineDataSource,然后再广播到主表进行Join查询。因为需要用到tindex的内存保存维表的数据，所以维表数据量不能太大，一般不建议超过10万。join在broker节点的时序图如下：</p>
-<p><img src="/./APACHE-DRUID-%E6%9F%A5%E8%AF%A2%E8%BF%87%E7%A8%8B%E6%BA%90%E7%A0%81%E8%A7%A3%E6%9E%90/image-20220211224911363.png" alt="image-20220211224911363"></p>
+<p><img src="/2022/02/11/APACHE%20DRUID%20%E6%9F%A5%E8%AF%A2%E8%BF%87%E7%A8%8B%E6%BA%90%E7%A0%81%E8%A7%A3%E6%9E%90/image-20220211224911363.png" alt="image-20220211224911363"></p>
 <p>​    关键逻辑是在ClientQuerySegmentWalker的inlineIfNecessary方法，该方法主要是进行维表的子查询并构建InlineDataSource,以便进行join过滤。</p>
 <p>​    InlineDataSource是一个在内存中存放所有数据的数据源，本质是一个迭代器Iterable，在查询时会利用该迭代器在his端做过滤。</p>
 <h5 id="his处理流程"><a href="#his处理流程" class="headerlink" title="his处理流程"></a>his处理流程</h5><p>​    tindex的join在historical节点主要是将broker端生成InlineDataSource转化为RowBasedIndexedTable，然后在HashJoinEngine构建JoinMatcher对主表进行过滤。</p>
-<p><img src="/./APACHE-DRUID-%E6%9F%A5%E8%AF%A2%E8%BF%87%E7%A8%8B%E6%BA%90%E7%A0%81%E8%A7%A3%E6%9E%90/image-20220211224946026.png" alt="image-20220211224946026"></p>
+<p><img src="/2022/02/11/APACHE%20DRUID%20%E6%9F%A5%E8%AF%A2%E8%BF%87%E7%A8%8B%E6%BA%90%E7%A0%81%E8%A7%A3%E6%9E%90/image-20220211224946026.png" alt="image-20220211224946026"></p>
 <p>​    时序图中以TimeseriesQuery查询作为例子，其他类型的查询差别不大。</p>
 <p>​    基本原理是将RowBasedIndexedTable的内存数据根据Join条件构建IndexedTableJoinMatcher，根据matchCondition方法判定是否满足连接条件。判定方式是提前将维表数据转化为一个Map，然后利用维表的数据进行key过滤，得到主表的docId。</p>
-<h3 id="总结"><a href="#总结" class="headerlink" title="总结"></a>总结</h3><p>​    本文重点结合源码以及架构解析了druid在查询过程中执行流程，详细的分解了各个步骤关键点，如有疑问，可以联系笔者邮箱：<a href="mailto:&#55;&#x33;&#x31;&#x30;&#x33;&#x30;&#53;&#x37;&#54;&#64;&#x71;&#x71;&#x2e;&#x63;&#x6f;&#109;">&#55;&#x33;&#x31;&#x30;&#x33;&#x30;&#53;&#x37;&#54;&#64;&#x71;&#x71;&#x2e;&#x63;&#x6f;&#109;</a></p>
+<h3 id="总结"><a href="#总结" class="headerlink" title="总结"></a>总结</h3><p>​    本文重点结合源码以及架构解析了druid在查询过程中执行流程，详细的分解了各个步骤关键点，如有疑问，可以联系笔者邮箱：<a href="mailto:&#55;&#x33;&#x31;&#x30;&#51;&#x30;&#x35;&#x37;&#x36;&#64;&#x71;&#x71;&#x2e;&#99;&#x6f;&#x6d;">&#55;&#x33;&#x31;&#x30;&#51;&#x30;&#x35;&#x37;&#x36;&#64;&#x71;&#x71;&#x2e;&#99;&#x6f;&#x6d;</a></p>
 
       
     </div>
