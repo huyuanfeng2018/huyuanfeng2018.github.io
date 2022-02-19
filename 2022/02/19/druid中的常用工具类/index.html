@@ -4,17 +4,26 @@
   <meta charset="utf-8">
   
   
-  <title>Big Face Cat</title>
+  <title>druid中的常用工具类 | Big Face Cat</title>
   <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
-  <meta name="description" content="记录自己的一些感悟以及分享">
-<meta property="og:type" content="website">
-<meta property="og:title" content="Big Face Cat">
-<meta property="og:url" content="http://example.com/index.html">
+  <meta name="description" content="简介本篇博文将讲解在apache druid中的关键的工具和他的抽象的封装，如果不理解这些很难去看懂源码。如果需要对apache druid的源码进行学习，务必先弄懂这些，下面笔者将对这些进行源码解析。Sequence与Yielder​    Sequence和Yielder是整个查询中非常常见工具封装，如果不理解很难去看懂查询部分代码，下面对Sequence与Yielder进行一个讲解： ​">
+<meta property="og:type" content="article">
+<meta property="og:title" content="druid中的常用工具类">
+<meta property="og:url" content="http://example.com/2022/02/19/druid%E4%B8%AD%E7%9A%84%E5%B8%B8%E7%94%A8%E5%B7%A5%E5%85%B7%E7%B1%BB/index.html">
 <meta property="og:site_name" content="Big Face Cat">
-<meta property="og:description" content="记录自己的一些感悟以及分享">
+<meta property="og:description" content="简介本篇博文将讲解在apache druid中的关键的工具和他的抽象的封装，如果不理解这些很难去看懂源码。如果需要对apache druid的源码进行学习，务必先弄懂这些，下面笔者将对这些进行源码解析。Sequence与Yielder​    Sequence和Yielder是整个查询中非常常见工具封装，如果不理解很难去看懂查询部分代码，下面对Sequence与Yielder进行一个讲解： ​">
 <meta property="og:locale">
+<meta property="og:image" content="http://example.com/2022/02/19/druid%E4%B8%AD%E7%9A%84%E5%B8%B8%E7%94%A8%E5%B7%A5%E5%85%B7%E7%B1%BB/image-20220219215833537.png">
+<meta property="og:image" content="http://example.com/2022/02/19/druid%E4%B8%AD%E7%9A%84%E5%B8%B8%E7%94%A8%E5%B7%A5%E5%85%B7%E7%B1%BB/image-20220219215913278.png">
+<meta property="og:image" content="http://example.com/2022/02/19/druid%E4%B8%AD%E7%9A%84%E5%B8%B8%E7%94%A8%E5%B7%A5%E5%85%B7%E7%B1%BB/image-20220219215928939.png">
+<meta property="og:image" content="http://example.com/2022/02/19/druid%E4%B8%AD%E7%9A%84%E5%B8%B8%E7%94%A8%E5%B7%A5%E5%85%B7%E7%B1%BB/image-20220219215943998.png">
+<meta property="og:image" content="http://example.com/2022/02/19/druid%E4%B8%AD%E7%9A%84%E5%B8%B8%E7%94%A8%E5%B7%A5%E5%85%B7%E7%B1%BB/image-20220219220046926.png">
+<meta property="og:image" content="http://example.com/2022/02/19/druid%E4%B8%AD%E7%9A%84%E5%B8%B8%E7%94%A8%E5%B7%A5%E5%85%B7%E7%B1%BB/image-20220219220148210.png">
+<meta property="article:published_time" content="2022-02-19T13:56:47.000Z">
+<meta property="article:modified_time" content="2022-02-19T14:11:43.516Z">
 <meta property="article:author" content="Lime">
 <meta name="twitter:card" content="summary">
+<meta name="twitter:image" content="http://example.com/2022/02/19/druid%E4%B8%AD%E7%9A%84%E5%B8%B8%E7%94%A8%E5%B7%A5%E5%85%B7%E7%B1%BB/image-20220219215833537.png">
   
     <link rel="alternate" href="/atom.xml" title="Big Face Cat" type="application/atom+xml">
   
@@ -71,9 +80,7 @@
 </header>
 
       <div class="outer">
-        <section id="main">
-  
-    <article id="post-druid中的常用工具类" class="h-entry article article-type-post" itemprop="blogPost" itemscope itemtype="https://schema.org/BlogPosting">
+        <section id="main"><article id="post-druid中的常用工具类" class="h-entry article article-type-post" itemprop="blogPost" itemscope itemtype="https://schema.org/BlogPosting">
   <div class="article-meta">
     <a href="/2022/02/19/druid%E4%B8%AD%E7%9A%84%E5%B8%B8%E7%94%A8%E5%B7%A5%E5%85%B7%E7%B1%BB/" class="article-date">
   <time class="dt-published" datetime="2022-02-19T13:56:47.000Z" itemprop="datePublished">2022-02-19</time>
@@ -86,8 +93,8 @@
       <header class="article-header">
         
   
-    <h1 itemprop="name">
-      <a class="p-name article-title" href="/2022/02/19/druid%E4%B8%AD%E7%9A%84%E5%B8%B8%E7%94%A8%E5%B7%A5%E5%85%B7%E7%B1%BB/">druid中的常用工具类</a>
+    <h1 class="p-name article-title" itemprop="headline name">
+      druid中的常用工具类
     </h1>
   
 
@@ -202,293 +209,19 @@
     </footer>
   </div>
   
-</article>
-
-
-
+    
+<nav id="article-nav">
   
-    <article id="post-APACHE-DRUID-查询过程源码解析" class="h-entry article article-type-post" itemprop="blogPost" itemscope itemtype="https://schema.org/BlogPosting">
-  <div class="article-meta">
-    <a href="/2022/02/11/APACHE-DRUID-%E6%9F%A5%E8%AF%A2%E8%BF%87%E7%A8%8B%E6%BA%90%E7%A0%81%E8%A7%A3%E6%9E%90/" class="article-date">
-  <time class="dt-published" datetime="2022-02-11T15:05:04.000Z" itemprop="datePublished">2022-02-11</time>
-</a>
-    
-  </div>
-  <div class="article-inner">
-    
-    
-      <header class="article-header">
-        
   
-    <h1 itemprop="name">
-      <a class="p-name article-title" href="/2022/02/11/APACHE-DRUID-%E6%9F%A5%E8%AF%A2%E8%BF%87%E7%A8%8B%E6%BA%90%E7%A0%81%E8%A7%A3%E6%9E%90/">APACHE DRUID 查询过程源码解析</a>
-    </h1>
+    <a href="/2022/02/11/APACHE-DRUID-%E6%9F%A5%E8%AF%A2%E8%BF%87%E7%A8%8B%E6%BA%90%E7%A0%81%E8%A7%A3%E6%9E%90/" id="article-nav-older" class="article-nav-link-wrap">
+      <strong class="article-nav-caption">Älter</strong>
+      <div class="article-nav-title">APACHE DRUID 查询过程源码解析</div>
+    </a>
   
+</nav>
 
-      </header>
-    
-    <div class="e-content article-entry" itemprop="articleBody">
-      
-        <h2 id="APACHE-DRUID-查询过程源码解析"><a href="#APACHE-DRUID-查询过程源码解析" class="headerlink" title="APACHE DRUID 查询过程源码解析"></a>APACHE DRUID 查询过程源码解析</h2><p>​        Apache Druid 是一个集时间序列数据库、数据仓库和全文检索系统特点于一体的分析性数据平台。本文将从整体到源码级别讲解整个查询流程</p>
-<h3 id="整体查询逻辑架构"><a href="#整体查询逻辑架构" class="headerlink" title="整体查询逻辑架构"></a>整体查询逻辑架构</h3><p><img src="/2022/02/11/APACHE-DRUID-%E6%9F%A5%E8%AF%A2%E8%BF%87%E7%A8%8B%E6%BA%90%E7%A0%81%E8%A7%A3%E6%9E%90/image-20220211222352338.png" alt="image-20220211222352338"></p>
-<p>​    druid最原生的查询方式是通过http进行查询，也可以通过sql查询，sql支持大部分查询，但是部分语法只能通过http的方式查询，本节将对druid的http整体的查询流程进行分析，方便开发者理解。</p>
-<p>​    用户在发送查询请求到broker端之后，broker节点会对请求进行解析处理（主要根据查询的interval和segment将查询拆分成多个子查询）之后发送到对应的his节点和实时task进行查询。最后再将所有的数据结果合并返回用户。</p>
-<h3 id="broker查询流程"><a href="#broker查询流程" class="headerlink" title="broker查询流程"></a>broker查询流程</h3><p>​    broker端的查询流程主要是根据查询的interval转换成不同segement的子查询发送到his端和task端，并根据它们返回数据结果进行合并，最后返回给用户。</p>
-<h4 id="broker初始化"><a href="#broker初始化" class="headerlink" title="broker初始化"></a>broker初始化</h4><p>在开始理解broker的查询前，需要先了解broker的初始化过程。broker初始化相关代码主要在CliBroker类中。</p>
-<p>初始化过程主要加载了以下module:</p>
-<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br></pre></td><td class="code"><pre><span class="line">CacheModule</span><br><span class="line">LookupModule</span><br><span class="line">SqlModule</span><br><span class="line">MySQLProtocolModule</span><br></pre></td></tr></table></figure>
-
-<ul>
-<li><p> CacheModule：主要用于查询结果的缓存；</p>
-</li>
-<li><p> LookupModule：主要用于分群id数据的读写；</p>
-</li>
-<li><p> SqlModule：主要用于支持原生社区版的sql查询；</p>
-</li>
-<li><p> MySQLProtocolModule：主要用于支持MySQL协议版的sql查询。</p>
-</li>
-</ul>
-<p>  请求整体的时序图如下：</p>
-<p>  <img src="/2022/02/11/APACHE-DRUID-%E6%9F%A5%E8%AF%A2%E8%BF%87%E7%A8%8B%E6%BA%90%E7%A0%81%E8%A7%A3%E6%9E%90/image-20220211223604776.png" alt="image-20220211223604776"></p>
-<p>请求代码处理逻辑：</p>
-<ul>
-<li>QueryResource的doPost方法中调用queryLifecycle.initialize初始化QueryLifecycle，使用UUID的方式生成唯一的queryId;</li>
-<li>通过QueryLifecycle中的execute方法调用QueryPlus的run方法，然后调用BaseQuery的getQuerySegmentSpecForLookUp方法，最后调用QuerySegmentWalker(此处的实现是ClientQuerySegmentWalker)的getQueryRunnerForIntervals方法根据interval拆分子查询;</li>
-</ul>
-<p>QuerySegmentWalker主要是根据指定的interval/segment进行查询，是查询逻辑中比较重要的接口，它有以下几个比较重要的实现类：</p>
-<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br></pre></td><td class="code"><pre><span class="line">ClientQuerySegmentWalker</span><br><span class="line">CachingClusteredClient</span><br><span class="line">ServerManager</span><br><span class="line">LuceneAppenderator</span><br></pre></td></tr></table></figure>
-
-<ul>
-<li>ClientQuerySegmentWalker：主要是在broker端使用，充当http-client的角色向his节点、task节点发出查询；</li>
-<li>CachingClusteredClient：主要是在broker端配合ClientQuerySegmentWalker使用，在http-client查询前后添加缓存的逻辑；</li>
-<li>ServerManager：主要是在his端使用，充当http-server的角色，根据client发起的查询，对本地的历史segment进行查询。</li>
-<li>LuceneAppenderator：主要是在task端使用，充当http-server的角色，根据client发起的查询，对本地的实时segment进行查询。</li>
-</ul>
-<p>在ClientQuerySegmentWalker的decorateClusterRunner方法中构造FluentQueryRunner，并依次调用FluentQueryRunner的run、mergeResults方法进行查询请求分发、结果的合并。</p>
-<h3 id="Historical查询流程"><a href="#Historical查询流程" class="headerlink" title="Historical查询流程"></a>Historical查询流程</h3><p>​    his端的查询流程主要是根据broker发过的请求，已经请求中的segmentId对本地的segment进行查询，并将查询返回给broker。需要注意的是his端的查询都是针对历史数据，实时接入的数据并不存放在his端。</p>
-<h4 id="historical初始化"><a href="#historical初始化" class="headerlink" title="historical初始化"></a>historical初始化</h4><p>​    在开始理解historical的查询前，需要先了解historical的初始化过程。historical初始化相关代码主要在CliHistorical类中。</p>
-<p>初始化过程主要加载了以下module:</p>
-<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br></pre></td><td class="code"><pre><span class="line">CacheModule</span><br><span class="line">LookupModule</span><br><span class="line">MetricsModule</span><br><span class="line">LuceneDruidModule</span><br><span class="line">LuceneQueryCoreModule</span><br></pre></td></tr></table></figure>
-
-<ul>
-<li>CacheModule：主要用于查询结果的缓存；</li>
-<li>LookupModule：主要用于分群id数据的读写；</li>
-<li>MetricsModule：用于记录程序运行或查询中的相关指标；</li>
-<li>LuceneDruidModule：主要用于适配Druid和Lucene的读写接口。</li>
-<li>LuceneQueryCoreModule：主要是实现了基于Lucene的一些聚合器。</li>
-</ul>
-<h4 id="historical处理请求整体流程"><a href="#historical处理请求整体流程" class="headerlink" title="historical处理请求整体流程"></a>historical处理请求整体流程</h4><p><img src="/2022/02/11/APACHE-DRUID-%E6%9F%A5%E8%AF%A2%E8%BF%87%E7%A8%8B%E6%BA%90%E7%A0%81%E8%A7%A3%E6%9E%90/image-20220211224146896.png" alt="image-20220211224146896"></p>
-<p>​    his节点的查询流程和broker入口一致，通过QueryResource的dopost方法进入，区别在于这里的****QuerySegmentWalker*<em><strong>对象是由容器注入的，在broker端，会注入的walker为</strong></em>*ClientQuerySegmentWalker****，而在historcal端注入的walker为ServerManager。代码处理逻辑如下：</p>
-<p><img src="/2022/02/11/APACHE-DRUID-%E6%9F%A5%E8%AF%A2%E8%BF%87%E7%A8%8B%E6%BA%90%E7%A0%81%E8%A7%A3%E6%9E%90/image-20220211224212898.png" alt="image-20220211224212898"></p>
-<p>​    由于在QueryWalker前的处理逻辑与broker的大致相同，这里的查询逻辑从ServerManager的getQueryRunnerForSegments方法开始说明，具体逻辑如下：</p>
-<ol>
-<li>在getQueryRunnerForSegments方法判断当前的查询类型，取出对应的QueryRunnerFactory和toolChest。</li>
-</ol>
-<p>​    1.1 QueryRunnerFactory的功能是创建底层查询的QueryRunner,以及合并多个QueryRunner的结果。该接口关注两个createRunner和mergeRunners两个方法：</p>
-<figure class="highlight java"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br></pre></td><td class="code"><pre><span class="line"><span class="function"><span class="keyword">default</span> QueryRunner&lt;T&gt; <span class="title">createRunner</span><span class="params">(QueryAdapter queryAdapter)</span> </span></span><br><span class="line"><span class="function">QueryRunner&lt;T&gt; <span class="title">mergeRunners</span><span class="params">(ExecutorServicequeryExecutor, Iterable&lt;QueryRunner&lt;T&gt;&gt; queryRunners)</span></span>;</span><br></pre></td></tr></table></figure>
-
-<ul>
-<li><p> createRunner： 此方法传入一个入参QueryAdapter，基于给定的QueryAdapter创建一个QueryRunner,QueryRunner会对指定的QueryAdapter（可以看做成一个segment）进行查询，并且返回一个Sequence存储返回的结果。</p>
-</li>
-<li><p> mergeRunners：大部分场景下会查询多个segment，createRunner方法根据传入的QueryAdapter分片创建了QueryRunner,mergeRunner方法会将这些QueryRunner提交给ExecutorService并发执行，最后合并其返回结果。不同类型的查询设计了不同类型的QueryRunnerFactory,并且在LuceneDruidModule中绑定，如下图所示：</p>
-</li>
-</ul>
-<p>  <img src="/2022/02/11/APACHE-DRUID-%E6%9F%A5%E8%AF%A2%E8%BF%87%E7%A8%8B%E6%BA%90%E7%A0%81%E8%A7%A3%E6%9E%90/image-20220211224312529.png" alt="image-20220211224312529"></p>
-<ol start="2">
-<li>根据传入query里面的segment集合，QueryRunnerFactory给每个segment创建一个queryRunner去执行查询逻辑；</li>
-</ol>
-<p>​    2.1 QueryRunner是封装具体查询逻辑的高级接口,QueryRunner采用了装饰器设计模式，类似于jdk中io的实现，主要分为以下三类QueryRunner：</p>
-<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br></pre></td><td class="code"><pre><span class="line">通用的QueryRunner</span><br><span class="line">Broker用到的QueryRunner</span><br><span class="line">实时节点和历史节点用到的QueryRunner</span><br></pre></td></tr></table></figure>
-
-<ul>
-<li> 通用的QueryRunner</li>
-</ul>
-<p>MetricsEmittingQueryRunner:查询过程中收集相关的metric信息，并且发送到配置的Emitter。</p>
-<p>CPUTimeMetricQueryRunner:查询过程中收集相关CPU的执行时间，并且发送打配置的Emitter。</p>
-<p>FinalizeResultsQueryRunner:将复杂对象的metric转化为数值类型。</p>
-<p>BySegmentQueryRunner:用于调试，在结果集上添加上Segment的信息。</p>
-<ul>
-<li> Broker用到的QueryRunner</li>
-</ul>
-<p>DirectDruidClient:使用HTTP对历史节点或者实时节点进行请求。</p>
-<p>UnionQueryRunner:处理Union的请求</p>
-<ul>
-<li> 实时节点和历史节点用到的QueryRunner</li>
-</ul>
-<p>ChainedExecutionQueryRunner:并发查询的处理类，对不同的segment查询提供线程池处理，    并且将最后结果合并。</p>
-<p>GroupByMergingQueryRunnerV2:类似于ChainedExecutionQueryRunner，由于groupby查    询最终合并需要通过根据维度分组聚合，所以需要单独使用这个类实现，同理FirstNQuery、    ScanQuery等也需要单独的实现，这里不做详细列举。</p>
-<p>CachingQueryRunner:封装缓存的逻辑。</p>
-<p>ReferenceCountingSegmentQueryRunner:添加对segment的引用计数逻辑，防止正在使用的segment被删除SpecificSegmentQueryRunner。</p>
-<ol start="3">
-<li><p>调用QueryRunnerFactory的mergeRunners方法将所有的queryRunner进行聚合</p>
-</li>
-<li><p>toolChest.mergeResults合并结果</p>
-</li>
-<li><p>返回最终的runner对象调用run方法进行查询</p>
-</li>
-</ol>
-<h4 id="详细解析"><a href="#详细解析" class="headerlink" title="详细解析"></a>详细解析</h4><p>下面对getQueryRunnerForSegments方法进行一个解析：</p>
-<p><img src="/2022/02/11/APACHE-DRUID-%E6%9F%A5%E8%AF%A2%E8%BF%87%E7%A8%8B%E6%BA%90%E7%A0%81%E8%A7%A3%E6%9E%90/image-20220211224501518.png" alt="image-20220211224501518"></p>
-<p>首先会获取QueryRunnerFactory，在druid中，每种查询类型都有属于自己的QueryRunnerFactory，并且这些factory都是单例对象，并且通过guice注入，这里conglomerate.findFactory(query);就是通过query类型获取对应的QueryRunnerFactory。</p>
-<p>在QueryRunnerFactory这个接口中有三个方法</p>
-<p><img src="/2022/02/11/APACHE-DRUID-%E6%9F%A5%E8%AF%A2%E8%BF%87%E7%A8%8B%E6%BA%90%E7%A0%81%E8%A7%A3%E6%9E%90/image-20220211224514503.png" alt="image-20220211224514503"></p>
-<ul>
-<li> createRunner：通过传入一个queryAdapter对象返回一个QueryRunner。queryAdapter字面意思为查询适配，实际上代表一个segment引用，一个queryAdapter对象实际上就表示一个segment，其返回的QueryRunner中就包含了对这个segment的查询逻辑。</li>
-<li> mergeRunners：此方法包含两个参数，queryExecutor表示执行查询的线程池，queryRunners则就是createRunner生成的QueryRunner集合，一般情况下在查询时候会有多个segment段一起并发执行查询，mergeRunners方法就是执行这些查询的入口。</li>
-<li> getToolchest：此方法用于获取对应查询类型的QueryToolChest，每一个查询类型都有自己对应的QueryToolChest，QueryToolChest对象也是单例对象并且通过guice注入。</li>
-</ul>
-<p><img src="/2022/02/11/APACHE-DRUID-%E6%9F%A5%E8%AF%A2%E8%BF%87%E7%A8%8B%E6%BA%90%E7%A0%81%E8%A7%A3%E6%9E%90/image-20220211224539528.png" alt="image-20220211224539528"></p>
-<p>​    这部分是构建queryRunners，每有一个segment都会对应有一个queryrunner,这里主要调用了buildAndDecorateQueryRunner方法来构建queryrunner，下面看看这个方法体中的实现：</p>
-<p><img src="/2022/02/11/APACHE-DRUID-%E6%9F%A5%E8%AF%A2%E8%BF%87%E7%A8%8B%E6%BA%90%E7%A0%81%E8%A7%A3%E6%9E%90/image-20220211224551432.png" alt="image-20220211224551432"></p>
-<p><img src="/2022/02/11/APACHE-DRUID-%E6%9F%A5%E8%AF%A2%E8%BF%87%E7%A8%8B%E6%BA%90%E7%A0%81%E8%A7%A3%E6%9E%90/image-20220211224555448.png" alt="image-20220211224555448"></p>
-<p>初始化SpecificSegmentSpec：表示一个segment的唯一标识，可以获取segment的interval、segmentid等</p>
-<p><img src="/2022/02/11/APACHE-DRUID-%E6%9F%A5%E8%AF%A2%E8%BF%87%E7%A8%8B%E6%BA%90%E7%A0%81%E8%A7%A3%E6%9E%90/image-20220211224614911.png" alt="image-20220211224614911"></p>
-<p>通过包装器模式构建整个执行链条，最终返回SetAndVerifyContextQueryRunner。如CachingQueryRunner中入参会传入metricsEmittingQueryRunner，而在CachingQueryRunner的run方法中：</p>
-<p><img src="/2022/02/11/APACHE-DRUID-%E6%9F%A5%E8%AF%A2%E8%BF%87%E7%A8%8B%E6%BA%90%E7%A0%81%E8%A7%A3%E6%9E%90/image-20220211224626074.png" alt="image-20220211224626074"></p>
-<p>执行判断判定未开启populateCache的话会直接调用base.run(queryPlus, responseContext)，而base对象则是传入的ueryRunner。</p>
-<p>在构建完成所有segment的QueryRunner之后，会将所有的QueryRunner进行一个合并：</p>
-<p><img src="/2022/02/11/APACHE-DRUID-%E6%9F%A5%E8%AF%A2%E8%BF%87%E7%A8%8B%E6%BA%90%E7%A0%81%E8%A7%A3%E6%9E%90/image-20220211224637342.png" alt="image-20220211224637342"></p>
-<p>​    通过调用factory.mergeRunners对上一步生成的QueryQunners构建执行计划并且调用toolChest的mergeResults方法对结果进行再次的聚合，其实到最后整个查询的入口点就在toolChest.mergeResults方法中。</p>
-<p>toolChest.mergeResults(factory.mergeRunners(exec, queryRunners))这段代码就可以看出查询的执行流程了，其中exec是一个线程池，线程池的数量通过参数druid.processing.numThreads设定，表示可用于并行处理段的处理线程数。我们的经验法则是num_cores-1，这意味着即使在重载情况下，仍有一个core可用于执行后台任务，如与ZooKeeper交谈和拉下片段。如果只有一个core可用，则此属性的默认值为1。建议设置为cpu核数减1。</p>
-<p>​    针对与不同的查询类型，其构建的queryRunner对象不同，queryRunner其实可以看做一个函数，这些流程其实都是在构建queryRunner的执行链条，最终都是由QueryPlus的run方法来触发这些queryRunner执行。</p>
-<h4 id="realtime节点查询流程"><a href="#realtime节点查询流程" class="headerlink" title="realtime节点查询流程"></a>realtime节点查询流程</h4><p>​    流程前部分和his、broker一样，只是segmentwalker不同，在realtime节点，使用的是RealtimeManager，现在看看它的getQueryRunnerForIntervals方法：</p>
-<p><img src="/2022/02/11/APACHE-DRUID-%E6%9F%A5%E8%AF%A2%E8%BF%87%E7%A8%8B%E6%BA%90%E7%A0%81%E8%A7%A3%E6%9E%90/image-20220211224735832.png" alt="image-20220211224735832"></p>
-<p>​    相比his节点来说简单多了，其中关键在于fireChief.getQueryRunner(query)这里。FireChief是实时接入数据的一个线程，用于实时的接入数据，getQueryRunner如下：</p>
-<p><img src="/2022/02/11/APACHE-DRUID-%E6%9F%A5%E8%AF%A2%E8%BF%87%E7%A8%8B%E6%BA%90%E7%A0%81%E8%A7%A3%E6%9E%90/image-20220211224747937.png" alt="image-20220211224747937"></p>
-<p>​    最终调用的是plumber.getQueryRunner(query)，其中plumber是接入数据的任务抽象，在实时接入任务时他的实现为AppenderatorPlumber，可以看做一个可追加数据的segment,对应QuerySegmentWalker为LuceneAppenderator。在LuceneAppenderator.getQueryRunnerForSegments方法中封装了具体逻辑，跟his逻辑类似这里不做详细阐述，请自行查看。</p>
-<h4 id="join查询流程"><a href="#join查询流程" class="headerlink" title="join查询流程"></a>join查询流程</h4><p>join的详细设计可以参考社区的proposal:</p>
-<p><a target="_blank" rel="noopener" href="https://gist.github.com/gianm/39548daef74f0373b3c87056e3db4627">https://gist.github.com/gianm/39548daef74f0373b3c87056e3db4627</a></p>
-<p>总体而言，druid由于使用的是scatter-gather查询模型，目前druid会把join转化为子查询。</p>
-<p>以 select * from A join B 为例，在druid中会转化为select * from A join (select * from B)。该查询的处理流程如下：</p>
-<p><img src="/2022/02/11/APACHE-DRUID-%E6%9F%A5%E8%AF%A2%E8%BF%87%E7%A8%8B%E6%BA%90%E7%A0%81%E8%A7%A3%E6%9E%90/image-20220211224839104.png" alt="image-20220211224839104"></p>
-<h5 id="broker处理流程"><a href="#broker处理流程" class="headerlink" title="broker处理流程"></a>broker处理流程</h5><p>​    druid的join需要先经过broker节点，把维表的数据全部查询出来放置到内存中，转化为InlineDataSource,然后再广播到主表进行Join查询。因为需要用到druid的内存保存维表的数据，所以维表数据量不能太大，一般不建议超过10万。join在broker节点的时序图如下：</p>
-<p><img src="/2022/02/11/APACHE-DRUID-%E6%9F%A5%E8%AF%A2%E8%BF%87%E7%A8%8B%E6%BA%90%E7%A0%81%E8%A7%A3%E6%9E%90/image-20220211224911363.png" alt="image-20220211224911363"></p>
-<p>​    关键逻辑是在ClientQuerySegmentWalker的inlineIfNecessary方法，该方法主要是进行维表的子查询并构建InlineDataSource,以便进行join过滤。</p>
-<p>​    InlineDataSource是一个在内存中存放所有数据的数据源，本质是一个迭代器Iterable，在查询时会利用该迭代器在his端做过滤。</p>
-<h5 id="his处理流程"><a href="#his处理流程" class="headerlink" title="his处理流程"></a>his处理流程</h5><p>​    druid的join在historical节点主要是将broker端生成InlineDataSource转化为RowBasedIndexedTable，然后在HashJoinEngine构建JoinMatcher对主表进行过滤。</p>
-<p><img src="/2022/02/11/APACHE-DRUID-%E6%9F%A5%E8%AF%A2%E8%BF%87%E7%A8%8B%E6%BA%90%E7%A0%81%E8%A7%A3%E6%9E%90/image-20220211224946026.png" alt="image-20220211224946026"></p>
-<p>​    时序图中以TimeseriesQuery查询作为例子，其他类型的查询差别不大。</p>
-<p>​    基本原理是将RowBasedIndexedTable的内存数据根据Join条件构建IndexedTableJoinMatcher，根据matchCondition方法判定是否满足连接条件。判定方式是提前将维表数据转化为一个Map，然后利用维表的数据进行key过滤，得到主表的docId。</p>
-<h3 id="总结"><a href="#总结" class="headerlink" title="总结"></a>总结</h3><p>​    本文重点结合源码以及架构解析了druid在查询过程中执行流程，详细的分解了各个步骤关键点，如有疑问，可以联系笔者邮箱：<a href="mailto:&#55;&#x33;&#49;&#x30;&#x33;&#48;&#x35;&#55;&#x36;&#x40;&#113;&#x71;&#46;&#x63;&#111;&#x6d;">&#55;&#x33;&#49;&#x30;&#x33;&#48;&#x35;&#55;&#x36;&#x40;&#113;&#x71;&#46;&#x63;&#111;&#x6d;</a></p>
-
-      
-    </div>
-    <footer class="article-footer">
-      <a data-url="http://example.com/2022/02/11/APACHE-DRUID-%E6%9F%A5%E8%AF%A2%E8%BF%87%E7%A8%8B%E6%BA%90%E7%A0%81%E8%A7%A3%E6%9E%90/" data-id="ckzijrjzg0000xf7918fs7h4g" data-title="APACHE DRUID 查询过程源码解析" class="article-share-link">Teilen</a>
-      
-      
-      
-  <ul class="article-tag-list" itemprop="keywords"><li class="article-tag-list-item"><a class="article-tag-list-link" href="/tags/druid/" rel="tag">druid</a></li></ul>
-
-    </footer>
-  </div>
   
 </article>
-
-
-
-  
-    <article id="post-flink的内存管理机制简单解析" class="h-entry article article-type-post" itemprop="blogPost" itemscope itemtype="https://schema.org/BlogPosting">
-  <div class="article-meta">
-    <a href="/2022/01/29/flink%E7%9A%84%E5%86%85%E5%AD%98%E7%AE%A1%E7%90%86%E6%9C%BA%E5%88%B6%E7%AE%80%E5%8D%95%E8%A7%A3%E6%9E%90/" class="article-date">
-  <time class="dt-published" datetime="2022-01-29T13:33:10.000Z" itemprop="datePublished">2022-01-29</time>
-</a>
-    
-  </div>
-  <div class="article-inner">
-    
-    
-      <header class="article-header">
-        
-  
-    <h1 itemprop="name">
-      <a class="p-name article-title" href="/2022/01/29/flink%E7%9A%84%E5%86%85%E5%AD%98%E7%AE%A1%E7%90%86%E6%9C%BA%E5%88%B6%E7%AE%80%E5%8D%95%E8%A7%A3%E6%9E%90/">Flink内存管理源码解读</a>
-    </h1>
-  
-
-      </header>
-    
-    <div class="e-content article-entry" itemprop="articleBody">
-      
-        <blockquote>
-<p>flink版本1.13</p>
-</blockquote>
-<pre><code>  在分布式计算引擎中，不管是flink、spark，mr等等使用jvm作为载体实现的框架中，对于整体的内存管理是一个很重要的部分，在大数据量下如何保证合理的使用，稳定的运行是各个框架的重点，本文将探究flink是如何对程序的内存进行一个管理。
-</code></pre>
-<p>从官网可以很直观和的看到flink的内存模型（本文只讲解taskmanager）</p>
-<img src="https://nightlies.apache.org/flink/flink-docs-release-1.13/fig/detailed-mem-model.svg" alt="detailed-mem-model.svg" style="zoom:25%;" />
-
-<p>可见flink在尽可能的尝试使用堆外内存来进行运算，都知道在jvm里面对内存的管理是自动的，在频繁的创建销毁对象的时候，监控分配都不是一件容易的事情，并且在堆类进行过度使用很容易造成oom等异常，所以需要对内存管理这一块进行一个特定的一个管理，而不能完全依靠jvm的内存回收机制。所以从底层上看，flink对内存的管理更像是cpp而不是java。</p>
-<p>flink对内存管理大部分依靠组件<code>MemoryManager</code>，从源码中的注释我们可以得知<code>MemoryManager</code>主要完成的工作，如下：</p>
-<figure class="highlight java"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment">/**</span></span><br><span class="line"><span class="comment"> * The memory manager governs the memory that Flink uses for sorting, hashing, caching or off-heap</span></span><br><span class="line"><span class="comment"> * state backends (e.g. RocksDB). Memory is represented either in&#123;<span class="doctag">@linkMemorySegment</span>&#125;s of equal</span></span><br><span class="line"><span class="comment"> * size or in reserved chunks of certain size. Operators allocate the memory either by requesting a</span></span><br><span class="line"><span class="comment"> * number of memory segments or by reserving chunks. Any allocated memory has to be released to be</span></span><br><span class="line"><span class="comment"> * reused later.</span></span><br><span class="line"><span class="comment"> *</span></span><br><span class="line"><span class="comment"> *&lt;p&gt;The memory segments are represented as off-heap unsafe memory regions (both via&#123;<span class="doctag">@link</span></span></span><br><span class="line"><span class="comment"> *MemorySegment&#125;). Releasing a memory segment will make it re-claimable by the garbage collector,</span></span><br><span class="line"><span class="comment"> * but does not necessarily immediately releases the underlying memory.</span></span><br><span class="line"><span class="comment"> */</span></span><br><span class="line"><span class="keyword">public</span> <span class="class"><span class="keyword">class</span> <span class="title">MemoryManager</span></span>&#123;&#125;</span><br></pre></td></tr></table></figure>
-
-<p>可以得知MemoryManager工作为：</p>
-<blockquote>
-<p>MemoryManager管理Flink用于排序、hash、缓存或堆外状态后端（例如RocksDB）的内存。内存可以用大小相等的{@link MemorySegment}表示，也可以用一定大小的保留块表示。操作员通过请求大量内存段或保留块来分配内存。任何分配的内存都必须释放，以便以后重新使用。</p>
-</blockquote>
-<p>可以看到注释可得，flink对内存的操作非常谨慎，使用者在使用之前需要申请分配内存，使用完成之后必须要手动释放。</p>
-<p><code>MemoryManager</code> 会在taskmanager启动的时候初始化，<code>MemoryManager</code> 数量取决于taskmanager一共有多少个<code>TaskSlot</code> 每一个TaskSlot都会有一个<code>MemoryManager</code>  </p>
-<figure class="highlight java"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br></pre></td><td class="code"><pre><span class="line"><span class="function"><span class="keyword">public</span> <span class="title">TaskSlot</span><span class="params">(</span></span></span><br><span class="line"><span class="params"><span class="function"><span class="keyword">final</span> <span class="keyword">int</span> index,</span></span></span><br><span class="line"><span class="params"><span class="function">        <span class="keyword">final</span> ResourceProfile resourceProfile,</span></span></span><br><span class="line"><span class="params"><span class="function">        <span class="keyword">final</span> <span class="keyword">int</span> memoryPageSize,</span></span></span><br><span class="line"><span class="params"><span class="function">        <span class="keyword">final</span> JobID jobId,</span></span></span><br><span class="line"><span class="params"><span class="function">        <span class="keyword">final</span> AllocationID allocationId,</span></span></span><br><span class="line"><span class="params"><span class="function">        <span class="keyword">final</span> Executor asyncExecutor)</span> </span>&#123;</span><br><span class="line"></span><br><span class="line"><span class="keyword">this</span>.index = index;</span><br><span class="line">    <span class="keyword">this</span>.resourceProfile = Preconditions.checkNotNull(resourceProfile);</span><br><span class="line">    <span class="keyword">this</span>.asyncExecutor = Preconditions.checkNotNull(asyncExecutor);</span><br><span class="line"></span><br><span class="line">    <span class="keyword">this</span>.tasks = <span class="keyword">new</span> HashMap&lt;&gt;(<span class="number">4</span>);</span><br><span class="line">    <span class="keyword">this</span>.state = TaskSlotState.ALLOCATED;</span><br><span class="line"></span><br><span class="line">    <span class="keyword">this</span>.jobId = jobId;</span><br><span class="line">    <span class="keyword">this</span>.allocationId = allocationId;</span><br><span class="line"></span><br><span class="line">    <span class="keyword">this</span>.memoryManager =createMemoryManager(resourceProfile, memoryPageSize);</span><br><span class="line"></span><br><span class="line">    <span class="keyword">this</span>.closingFuture = <span class="keyword">new</span> CompletableFuture&lt;&gt;();</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
-
-<figure class="highlight java"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br></pre></td><td class="code"><pre><span class="line"><span class="function"><span class="keyword">public</span> <span class="keyword">static</span> MemoryManager <span class="title">create</span><span class="params">(<span class="keyword">long</span> memorySize, <span class="keyword">int</span> pageSize)</span> </span>&#123;</span><br><span class="line"><span class="keyword">return</span> <span class="keyword">new</span> MemoryManager(memorySize, pageSize);</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
-
-<p>可以看到创建<code>MemoryManager</code> 会传入两个参数，一个是memorySize一个是pageSize，两个参数分别标识 <code>MemoryManager</code>  所管理的总的memorySize一个是pageSize。其中pageSize默认为32kb。</p>
-<blockquote>
-<p>pageSize是什么？</p>
-</blockquote>
-<p>程序在运行时往操作系统申请内存时，是一个一个page申请的，每一个page的大小是固定的，flink在这里借鉴了这一思想将内存申请也抽象为此，所以<code>MemoryManager</code> 对象中最终要的两个变量就是总内存大小和pageSize（每申请一块内存的大小）</p>
-<p>之前就已经提过了<code>MemoryManager</code> 会申请内存，其实就是申请一块一块pageSize大小的内</p>
-<p>pageSize，flink内部将这个每一块内存抽象为了<code>MemorySegment</code> 对象，<code>MemoryManager</code> 申请内存的方法为</p>
-<figure class="highlight java"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br></pre></td><td class="code"><pre><span class="line"><span class="function"><span class="keyword">public</span> List&lt;MemorySegment&gt; <span class="title">allocatePages</span><span class="params">(Object owner, <span class="keyword">int</span> numPages)</span></span></span><br><span class="line"><span class="function"><span class="keyword">throws</span> MemoryAllocationException</span>&#123;</span><br><span class="line">List&lt;MemorySegment&gt;segments = <span class="keyword">new</span> ArrayList&lt;&gt;(numPages);</span><br><span class="line">    allocatePages(owner, segments, numPages);</span><br><span class="line">    <span class="keyword">return</span> segments;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
-
-<p>其中numPages就是本次申请要申请的segment数量，返回的也是numPages个segment的集合，每一个segment代表的内存大小就是之前的pageSize</p>
-<p>接下来看看<code>MemorySegment</code> 对象</p>
-<figure class="highlight java"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br></pre></td><td class="code"><pre><span class="line"></span><br><span class="line"><span class="meta">@Nullable</span> <span class="keyword">private</span> <span class="keyword">final</span> <span class="keyword">byte</span>[] heapMemory;</span><br><span class="line"></span><br><span class="line"><span class="meta">@Nullable</span> <span class="keyword">private</span> ByteBuffer offHeapBuffer;</span><br><span class="line"></span><br><span class="line"><span class="keyword">private</span> <span class="keyword">long</span> address;</span><br><span class="line"></span><br><span class="line"><span class="keyword">private</span> <span class="keyword">final</span> <span class="keyword">long</span> addressLimit;</span><br><span class="line"></span><br><span class="line"><span class="keyword">private</span> <span class="keyword">final</span> <span class="keyword">int</span> size;</span><br><span class="line"></span><br><span class="line"><span class="meta">@Nullable</span> <span class="keyword">private</span> <span class="keyword">final</span> Object owner;</span><br><span class="line"></span><br><span class="line"><span class="meta">@Nullable</span> <span class="keyword">private</span> Runnable cleaner;</span><br><span class="line"></span><br></pre></td></tr></table></figure>
-
-<p>其中heapMemory和offHeapBuffer就是<code>MemorySegment</code> 所管理的内存，offHeapBuffer从字面意思就能看出来是表示堆外的内存 而heapMemory则表示堆内</p>
-<p><code>MemorySegmentFactory</code> 是创建<code>MemorySegment</code> 的工厂，它可以创建基于堆内的 也可以创建堆外的内存</p>
-<p>创建堆外的Memory</p>
-<figure class="highlight java"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br></pre></td><td class="code"><pre><span class="line"><span class="function"><span class="keyword">public</span> <span class="keyword">static</span> MemorySegment <span class="title">allocateOffHeapUnsafeMemory</span><span class="params">(</span></span></span><br><span class="line"><span class="params"><span class="function"><span class="keyword">int</span> size, Object owner, Runnable customCleanupAction)</span> </span>&#123;</span><br><span class="line"><span class="keyword">long</span> address = MemoryUtils.allocateUnsafe(size);</span><br><span class="line">    ByteBuffer offHeapBuffer = MemoryUtils.wrapUnsafeMemoryWithByteBuffer(address, size);</span><br><span class="line">    Runnable cleaner = MemoryUtils.createMemoryCleaner(address, customCleanupAction);</span><br><span class="line">    <span class="keyword">return</span> <span class="keyword">new</span> MemorySegment(offHeapBuffer, owner, <span class="keyword">false</span>, cleaner);</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
-
-<p>堆内</p>
-<figure class="highlight java"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br></pre></td><td class="code"><pre><span class="line"><span class="function"><span class="keyword">public</span> <span class="keyword">static</span> MemorySegment <span class="title">allocateUnpooledSegment</span><span class="params">(<span class="keyword">int</span> size, Object owner)</span> </span>&#123;</span><br><span class="line"><span class="keyword">return</span> <span class="keyword">new</span> MemorySegment(<span class="keyword">new</span> <span class="keyword">byte</span>[size], owner);</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
-
-<p>可以看到申请堆外内存需要传入一个cleaner对象，它适用于内存用完之后对内存进行一个回收，而堆内则不需要，他由jvm虚拟机自动进行一个回收。</p>
-<p>flink在什么地方使用这些内存？</p>
-<ol>
-<li><code>NetworkBuffer</code> ：flink在进行网络传输使用，每一个taskmanager在启动的时候都会生成一个<code>NetworkBufferPool</code>，在生成<code>NetworkBufferPool</code>时，会申请一定数量的内存用于网络传输，申请代码如下：</li>
-</ol>
-<figure class="highlight java"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">try</span>&#123;</span><br><span class="line"><span class="keyword">for</span>(<span class="keyword">int</span> i = <span class="number">0</span>; i &lt; numberOfSegmentsToAllocate; i++) &#123;</span><br><span class="line">availableMemorySegments.add(</span><br><span class="line">MemorySegmentFactory.allocateUnpooledOffHeapMemory(segmentSize, <span class="keyword">null</span>));</span><br><span class="line">&#125;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
-
-<p>  其中申请的segmentSize为numberOfSegmentsToAllocate，每一块的大小为segmentSize，flink网络算子之间的数据传输就是依靠这些申请而来的内存，这两个参数是怎么来的呢？是通过对最大的网络内存除以pagesize分别得到的segmentSize就等于segmentSize 最大网络内存可以通过参数taskmanager.memory.network.fraction指定。而且可以看allocateUnpooledOffHeapMemory方法申请的是堆外内存，说明flink网络传输所使用的内存是堆外内存,并且这些内存在申请的时候，并不像之前allocateOffHeapUnsafeMemory 方法那样需要生成一个cleaner 对象，说明这些网络内存申请了就不用销毁而是伴随着taskmanager的整个生命周期</p>
-<p>同理，在taskmanager中还有其他在taskmanager一初始化就申请内存并且伴随整个taskmanager生命周期的segmentbufferpool，具体代码我不过度介绍了。如：</p>
-<p><code>BatchShuffleReadBufferPool： **一个固定大小的 MemorySegment池，由批处理用于shuffle数据读取**</code></p>
-<ol>
-<li>状态后端和python的UDf，RocksDB State Backend 的本地内存，flink在使用rocksdb作为状态后端存储的时候rocksdb会使用这部分内存。同时python的UDF也使用的是这部分的内存，他们申请内存都是通过MemoryManager 的getSharedMemoryResourceForManagedMemory方法，这里不做详细说明，感兴趣的可以看一下这部分源码，</li>
-</ol>
-<figure class="highlight java"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">public</span>&lt;T extends AutoCloseable&gt;</span><br><span class="line">OpaqueMemoryResource&lt;T&gt;getSharedMemoryResourceForManagedMemory(</span><br><span class="line">String type,</span><br><span class="line">                LongFunctionWithException&lt;T, Exception&gt;initializer,</span><br><span class="line">                <span class="keyword">double</span> fractionToInitializeWith)</span><br><span class="line"><span class="keyword">throws</span> Exception&#123;&#125;</span><br></pre></td></tr></table></figure>
-
-<ol start="2">
-<li>批处理中的排序，分组和缓存部分，上面已经说过，每个slot都会分配一个MemoryManager ，而在task运行过程中，在批处理中，往往存在对大量数据进行排序或者分组的操作，这些操作需要申请一定数量的内存进行。也会通过MemoryManager 进行内存的申请。</li>
-</ol>
-
-      
-    </div>
-    <footer class="article-footer">
-      <a data-url="http://example.com/2022/01/29/flink%E7%9A%84%E5%86%85%E5%AD%98%E7%AE%A1%E7%90%86%E6%9C%BA%E5%88%B6%E7%AE%80%E5%8D%95%E8%A7%A3%E6%9E%90/" data-id="ckyzvppji0000hg9jf88v84s4" data-title="Flink内存管理源码解读" class="article-share-link">Teilen</a>
-      
-      
-      
-  <ul class="article-tag-list" itemprop="keywords"><li class="article-tag-list-item"><a class="article-tag-list-link" href="/tags/flink/" rel="tag">flink</a></li></ul>
-
-    </footer>
-  </div>
-  
-</article>
-
-
-
-  
 
 
 </section>
