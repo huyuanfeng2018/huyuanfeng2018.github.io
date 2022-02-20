@@ -61,10 +61,10 @@
         
           <a id="nav-rss-link" class="nav-icon" href="/atom.xml" title="RSS Feed"></a>
         
-        <a id="nav-search-btn" class="nav-icon" title="Search"></a>
+        <a id="nav-search-btn" class="nav-icon" title="Suche"></a>
       </nav>
       <div id="search-form-wrap">
-        <form action="//google.com/search" method="get" accept-charset="UTF-8" class="search-form"><input type="search" name="q" class="search-form-input" placeholder="Search"><button type="submit" class="search-form-submit">&#xF002;</button><input type="hidden" name="sitesearch" value="http://example.com"></form>
+        <form action="//google.com/search" method="get" accept-charset="UTF-8" class="search-form"><input type="search" name="q" class="search-form-input" placeholder="Suche"><button type="submit" class="search-form-submit">&#xF002;</button><input type="hidden" name="sitesearch" value="http://example.com"></form>
       </div>
     </div>
   </div>
@@ -73,10 +73,10 @@
       <div class="outer">
         <section id="main">
   
-    <article id="post-flink的内存管理机制简单解析" class="h-entry article article-type-post" itemprop="blogPost" itemscope itemtype="https://schema.org/BlogPosting">
+    <article id="post-基于Flink的实时数仓探索" class="h-entry article article-type-post" itemprop="blogPost" itemscope itemtype="https://schema.org/BlogPosting">
   <div class="article-meta">
-    <a href="/2022/01/29/flink%E7%9A%84%E5%86%85%E5%AD%98%E7%AE%A1%E7%90%86%E6%9C%BA%E5%88%B6%E7%AE%80%E5%8D%95%E8%A7%A3%E6%9E%90/" class="article-date">
-  <time class="dt-published" datetime="2022-01-29T13:33:10.000Z" itemprop="datePublished">2022-01-29</time>
+    <a href="/2021/10/20/%E5%9F%BA%E4%BA%8EFlink%E7%9A%84%E5%AE%9E%E6%97%B6%E6%95%B0%E4%BB%93%E6%8E%A2%E7%B4%A2/" class="article-date">
+  <time class="dt-published" datetime="2021-10-20T07:00:33.000Z" itemprop="datePublished">2021-10-20</time>
 </a>
     
   </div>
@@ -87,7 +87,7 @@
         
   
     <h1 itemprop="name">
-      <a class="p-name article-title" href="/2022/01/29/flink%E7%9A%84%E5%86%85%E5%AD%98%E7%AE%A1%E7%90%86%E6%9C%BA%E5%88%B6%E7%AE%80%E5%8D%95%E8%A7%A3%E6%9E%90/">Flink内存管理源码解读</a>
+      <a class="p-name article-title" href="/2021/10/20/%E5%9F%BA%E4%BA%8EFlink%E7%9A%84%E5%AE%9E%E6%97%B6%E6%95%B0%E4%BB%93%E6%8E%A2%E7%B4%A2/">基于Flink的实时数仓探索</a>
     </h1>
   
 
@@ -95,72 +95,54 @@
     
     <div class="e-content article-entry" itemprop="articleBody">
       
-        <blockquote>
-<p>flink版本1.13</p>
-</blockquote>
-<pre><code>  在分布式计算引擎中，不管是flink、spark，mr等等使用jvm作为载体实现的框架中，对于整体的内存管理是一个很重要的部分，在大数据量下如何保证合理的使用，稳定的运行是各个框架的重点，本文将探究flink是如何对程序的内存进行一个管理。
-</code></pre>
-<p>从官网可以很直观和的看到flink的内存模型（本文只讲解taskmanager）</p>
-<img src="https://nightlies.apache.org/flink/flink-docs-release-1.13/fig/detailed-mem-model.svg" alt="detailed-mem-model.svg" style="zoom:25%;" />
-
-<p>可见flink在尽可能的尝试使用堆外内存来进行运算，都知道在jvm里面对内存的管理是自动的，在频繁的创建销毁对象的时候，监控分配都不是一件容易的事情，并且在堆类进行过度使用很容易造成oom等异常，所以需要对内存管理这一块进行一个特定的一个管理，而不能完全依靠jvm的内存回收机制。所以从底层上看，flink对内存的管理更像是cpp而不是java。</p>
-<p>flink对内存管理大部分依靠组件<code>MemoryManager</code>，从源码中的注释我们可以得知<code>MemoryManager</code>主要完成的工作，如下：</p>
-<figure class="highlight java"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment">/**</span></span><br><span class="line"><span class="comment"> * The memory manager governs the memory that Flink uses for sorting, hashing, caching or off-heap</span></span><br><span class="line"><span class="comment"> * state backends (e.g. RocksDB). Memory is represented either in&#123;<span class="doctag">@linkMemorySegment</span>&#125;s of equal</span></span><br><span class="line"><span class="comment"> * size or in reserved chunks of certain size. Operators allocate the memory either by requesting a</span></span><br><span class="line"><span class="comment"> * number of memory segments or by reserving chunks. Any allocated memory has to be released to be</span></span><br><span class="line"><span class="comment"> * reused later.</span></span><br><span class="line"><span class="comment"> *</span></span><br><span class="line"><span class="comment"> *&lt;p&gt;The memory segments are represented as off-heap unsafe memory regions (both via&#123;<span class="doctag">@link</span></span></span><br><span class="line"><span class="comment"> *MemorySegment&#125;). Releasing a memory segment will make it re-claimable by the garbage collector,</span></span><br><span class="line"><span class="comment"> * but does not necessarily immediately releases the underlying memory.</span></span><br><span class="line"><span class="comment"> */</span></span><br><span class="line"><span class="keyword">public</span> <span class="class"><span class="keyword">class</span> <span class="title">MemoryManager</span></span>&#123;&#125;</span><br></pre></td></tr></table></figure>
-
-<p>可以得知MemoryManager工作为：</p>
-<blockquote>
-<p>MemoryManager管理Flink用于排序、hash、缓存或堆外状态后端（例如RocksDB）的内存。内存可以用大小相等的{@link MemorySegment}表示，也可以用一定大小的保留块表示。操作员通过请求大量内存段或保留块来分配内存。任何分配的内存都必须释放，以便以后重新使用。</p>
-</blockquote>
-<p>可以看到注释可得，flink对内存的操作非常谨慎，使用者在使用之前需要申请分配内存，使用完成之后必须要手动释放。</p>
-<p><code>MemoryManager</code> 会在taskmanager启动的时候初始化，<code>MemoryManager</code> 数量取决于taskmanager一共有多少个<code>TaskSlot</code> 每一个TaskSlot都会有一个<code>MemoryManager</code>  </p>
-<figure class="highlight java"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br></pre></td><td class="code"><pre><span class="line"><span class="function"><span class="keyword">public</span> <span class="title">TaskSlot</span><span class="params">(</span></span></span><br><span class="line"><span class="params"><span class="function"><span class="keyword">final</span> <span class="keyword">int</span> index,</span></span></span><br><span class="line"><span class="params"><span class="function">        <span class="keyword">final</span> ResourceProfile resourceProfile,</span></span></span><br><span class="line"><span class="params"><span class="function">        <span class="keyword">final</span> <span class="keyword">int</span> memoryPageSize,</span></span></span><br><span class="line"><span class="params"><span class="function">        <span class="keyword">final</span> JobID jobId,</span></span></span><br><span class="line"><span class="params"><span class="function">        <span class="keyword">final</span> AllocationID allocationId,</span></span></span><br><span class="line"><span class="params"><span class="function">        <span class="keyword">final</span> Executor asyncExecutor)</span> </span>&#123;</span><br><span class="line"></span><br><span class="line"><span class="keyword">this</span>.index = index;</span><br><span class="line">    <span class="keyword">this</span>.resourceProfile = Preconditions.checkNotNull(resourceProfile);</span><br><span class="line">    <span class="keyword">this</span>.asyncExecutor = Preconditions.checkNotNull(asyncExecutor);</span><br><span class="line"></span><br><span class="line">    <span class="keyword">this</span>.tasks = <span class="keyword">new</span> HashMap&lt;&gt;(<span class="number">4</span>);</span><br><span class="line">    <span class="keyword">this</span>.state = TaskSlotState.ALLOCATED;</span><br><span class="line"></span><br><span class="line">    <span class="keyword">this</span>.jobId = jobId;</span><br><span class="line">    <span class="keyword">this</span>.allocationId = allocationId;</span><br><span class="line"></span><br><span class="line">    <span class="keyword">this</span>.memoryManager =createMemoryManager(resourceProfile, memoryPageSize);</span><br><span class="line"></span><br><span class="line">    <span class="keyword">this</span>.closingFuture = <span class="keyword">new</span> CompletableFuture&lt;&gt;();</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
-
-<figure class="highlight java"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br></pre></td><td class="code"><pre><span class="line"><span class="function"><span class="keyword">public</span> <span class="keyword">static</span> MemoryManager <span class="title">create</span><span class="params">(<span class="keyword">long</span> memorySize, <span class="keyword">int</span> pageSize)</span> </span>&#123;</span><br><span class="line"><span class="keyword">return</span> <span class="keyword">new</span> MemoryManager(memorySize, pageSize);</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
-
-<p>可以看到创建<code>MemoryManager</code> 会传入两个参数，一个是memorySize一个是pageSize，两个参数分别标识 <code>MemoryManager</code>  所管理的总的memorySize一个是pageSize。其中pageSize默认为32kb。</p>
-<blockquote>
-<p>pageSize是什么？</p>
-</blockquote>
-<p>程序在运行时往操作系统申请内存时，是一个一个page申请的，每一个page的大小是固定的，flink在这里借鉴了这一思想将内存申请也抽象为此，所以<code>MemoryManager</code> 对象中最终要的两个变量就是总内存大小和pageSize（每申请一块内存的大小）</p>
-<p>之前就已经提过了<code>MemoryManager</code> 会申请内存，其实就是申请一块一块pageSize大小的内</p>
-<p>pageSize，flink内部将这个每一块内存抽象为了<code>MemorySegment</code> 对象，<code>MemoryManager</code> 申请内存的方法为</p>
-<figure class="highlight java"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br></pre></td><td class="code"><pre><span class="line"><span class="function"><span class="keyword">public</span> List&lt;MemorySegment&gt; <span class="title">allocatePages</span><span class="params">(Object owner, <span class="keyword">int</span> numPages)</span></span></span><br><span class="line"><span class="function"><span class="keyword">throws</span> MemoryAllocationException</span>&#123;</span><br><span class="line">List&lt;MemorySegment&gt;segments = <span class="keyword">new</span> ArrayList&lt;&gt;(numPages);</span><br><span class="line">    allocatePages(owner, segments, numPages);</span><br><span class="line">    <span class="keyword">return</span> segments;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
-
-<p>其中numPages就是本次申请要申请的segment数量，返回的也是numPages个segment的集合，每一个segment代表的内存大小就是之前的pageSize</p>
-<p>接下来看看<code>MemorySegment</code> 对象</p>
-<figure class="highlight java"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br></pre></td><td class="code"><pre><span class="line"></span><br><span class="line"><span class="meta">@Nullable</span> <span class="keyword">private</span> <span class="keyword">final</span> <span class="keyword">byte</span>[] heapMemory;</span><br><span class="line"></span><br><span class="line"><span class="meta">@Nullable</span> <span class="keyword">private</span> ByteBuffer offHeapBuffer;</span><br><span class="line"></span><br><span class="line"><span class="keyword">private</span> <span class="keyword">long</span> address;</span><br><span class="line"></span><br><span class="line"><span class="keyword">private</span> <span class="keyword">final</span> <span class="keyword">long</span> addressLimit;</span><br><span class="line"></span><br><span class="line"><span class="keyword">private</span> <span class="keyword">final</span> <span class="keyword">int</span> size;</span><br><span class="line"></span><br><span class="line"><span class="meta">@Nullable</span> <span class="keyword">private</span> <span class="keyword">final</span> Object owner;</span><br><span class="line"></span><br><span class="line"><span class="meta">@Nullable</span> <span class="keyword">private</span> Runnable cleaner;</span><br><span class="line"></span><br></pre></td></tr></table></figure>
-
-<p>其中heapMemory和offHeapBuffer就是<code>MemorySegment</code> 所管理的内存，offHeapBuffer从字面意思就能看出来是表示堆外的内存 而heapMemory则表示堆内</p>
-<p><code>MemorySegmentFactory</code> 是创建<code>MemorySegment</code> 的工厂，它可以创建基于堆内的 也可以创建堆外的内存</p>
-<p>创建堆外的Memory</p>
-<figure class="highlight java"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br></pre></td><td class="code"><pre><span class="line"><span class="function"><span class="keyword">public</span> <span class="keyword">static</span> MemorySegment <span class="title">allocateOffHeapUnsafeMemory</span><span class="params">(</span></span></span><br><span class="line"><span class="params"><span class="function"><span class="keyword">int</span> size, Object owner, Runnable customCleanupAction)</span> </span>&#123;</span><br><span class="line"><span class="keyword">long</span> address = MemoryUtils.allocateUnsafe(size);</span><br><span class="line">    ByteBuffer offHeapBuffer = MemoryUtils.wrapUnsafeMemoryWithByteBuffer(address, size);</span><br><span class="line">    Runnable cleaner = MemoryUtils.createMemoryCleaner(address, customCleanupAction);</span><br><span class="line">    <span class="keyword">return</span> <span class="keyword">new</span> MemorySegment(offHeapBuffer, owner, <span class="keyword">false</span>, cleaner);</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
-
-<p>堆内</p>
-<figure class="highlight java"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br></pre></td><td class="code"><pre><span class="line"><span class="function"><span class="keyword">public</span> <span class="keyword">static</span> MemorySegment <span class="title">allocateUnpooledSegment</span><span class="params">(<span class="keyword">int</span> size, Object owner)</span> </span>&#123;</span><br><span class="line"><span class="keyword">return</span> <span class="keyword">new</span> MemorySegment(<span class="keyword">new</span> <span class="keyword">byte</span>[size], owner);</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
-
-<p>可以看到申请堆外内存需要传入一个cleaner对象，它适用于内存用完之后对内存进行一个回收，而堆内则不需要，他由jvm虚拟机自动进行一个回收。</p>
-<p>flink在什么地方使用这些内存？</p>
+        <p>在大数据的早期，因为Hadoop技术的迅速崛起，数据的存储格式主要是以文件的格式存在，所以各个企业搭建的数据仓库都是以文件处理为主，需要等待数据写入到文件中再集中进行批量处理，这其实就是我们常说的离线数仓。</p>
+<h3 id="实时数仓的发展"><a href="#实时数仓的发展" class="headerlink" title="实时数仓的发展"></a>实时数仓的发展</h3><p>在早期也有部分公司有实时计算的需求，但是数据量比较少，所以在实时方面无法形成完整的体系，实时数仓更多是以实时计算的形式存在，作为离线数仓的辅助，主要使用的技术也是Storm或Spark Streaming。基本所有的实时任务都是具体问题具体分析，来一个需求做一个，基本不考虑它们之间的关系。</p>
+<p><img src="/2021/10/20/%E5%9F%BA%E4%BA%8EFlink%E7%9A%84%E5%AE%9E%E6%97%B6%E6%95%B0%E4%BB%93%E6%8E%A2%E7%B4%A2/image-20220220150146400.png" alt="image-20220220150146400"></p>
+<p>随着产品和业务人员对实时数据需求的不断增多，这种开发模式出现的问题越来越多：</p>
 <ol>
-<li><code>NetworkBuffer</code> ：flink在进行网络传输使用，每一个taskmanager在启动的时候都会生成一个<code>NetworkBufferPool</code>，在生成<code>NetworkBufferPool</code>时，会申请一定数量的内存用于网络传输，申请代码如下：</li>
+<li>指标越来越多，“摊大饼”的开发导致代码耦合问题严重。</li>
+<li>需求越来越多，有的需要明细数据，有的需要 OLAP 分析。</li>
+<li>每个需求都要申请资源，导致资源成本急速膨胀，资源不能集约有效利用。</li>
+<li>容错性低，由于是实时的数据处理，当线上环境出现问题或者要更新时，需要考虑如何确保数据不重不丢。</li>
 </ol>
-<figure class="highlight java"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">try</span>&#123;</span><br><span class="line"><span class="keyword">for</span>(<span class="keyword">int</span> i = <span class="number">0</span>; i &lt; numberOfSegmentsToAllocate; i++) &#123;</span><br><span class="line">availableMemorySegments.add(</span><br><span class="line">MemorySegmentFactory.allocateUnpooledOffHeapMemory(segmentSize, <span class="keyword">null</span>));</span><br><span class="line">&#125;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
-
-<p>  其中申请的segmentSize为numberOfSegmentsToAllocate，每一块的大小为segmentSize，flink网络算子之间的数据传输就是依靠这些申请而来的内存，这两个参数是怎么来的呢？是通过对最大的网络内存除以pagesize分别得到的segmentSize就等于segmentSize 最大网络内存可以通过参数taskmanager.memory.network.fraction指定。而且可以看allocateUnpooledOffHeapMemory方法申请的是堆外内存，说明flink网络传输所使用的内存是堆外内存,并且这些内存在申请的时候，并不像之前allocateOffHeapUnsafeMemory 方法那样需要生成一个cleaner 对象，说明这些网络内存申请了就不用销毁而是伴随着taskmanager的整个生命周期</p>
-<p>同理，在taskmanager中还有其他在taskmanager一初始化就申请内存并且伴随整个taskmanager生命周期的segmentbufferpool，具体代码我不过度介绍了。如：</p>
-<p><code>BatchShuffleReadBufferPool： **一个固定大小的 MemorySegment池，由批处理用于shuffle数据读取**</code></p>
+<p>其实仔细分析这些问题，可以知道和离线数仓遇到的问题比较相似，数据量大了、作业多了之后产生了各种问题，离线数仓当时是怎么解决的？离线数仓通过分层架构使数据解耦，多个业务可以共用数据，实时数仓是否也可以用分层架构呢？当然是可以的，但是细节上和离线的分层还是有一些不同。</p>
+<h3 id="实时数仓建设"><a href="#实时数仓建设" class="headerlink" title="实时数仓建设"></a>实时数仓建设</h3><p>实时数仓建设的方法论也是和离线数仓比较相似，毕竟二者遇到的问题比较类似，早期也是来一个需求，开发一个作业，当规模起来之后就需要考虑治理的问题。而分层则是一个不错的治理方式，通过合理的分层可以把不同粒度、不同来源的数据采用ER建模、维度建模的方式统一加工、清洗、汇总数据，形成基础的数仓公共层，并根据下游业务部门的具体需求建设数仓应用层。既满足了业务灵活多变的需求，又减少了重复建设导致的资源浪费和人力成本。</p>
+<p><img src="/2021/10/20/%E5%9F%BA%E4%BA%8EFlink%E7%9A%84%E5%AE%9E%E6%97%B6%E6%95%B0%E4%BB%93%E6%8E%A2%E7%B4%A2/image-20220220150424275.png" alt="image-20220220150424275"></p>
 <ol>
-<li>状态后端和python的UDf，RocksDB State Backend 的本地内存，flink在使用rocksdb作为状态后端存储的时候rocksdb会使用这部分内存。同时python的UDF也使用的是这部分的内存，他们申请内存都是通过MemoryManager 的getSharedMemoryResourceForManagedMemory方法，这里不做详细说明，感兴趣的可以看一下这部分源码，</li>
+<li>ods贴源层</li>
 </ol>
-<figure class="highlight java"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">public</span>&lt;T extends AutoCloseable&gt;</span><br><span class="line">OpaqueMemoryResource&lt;T&gt;getSharedMemoryResourceForManagedMemory(</span><br><span class="line">String type,</span><br><span class="line">                LongFunctionWithException&lt;T, Exception&gt;initializer,</span><br><span class="line">                <span class="keyword">double</span> fractionToInitializeWith)</span><br><span class="line"><span class="keyword">throws</span> Exception&#123;&#125;</span><br></pre></td></tr></table></figure>
-
+<p>在贴源层，它的数据主要来自于上游的数据源，并和这些数据源保持一致，而数据源主要有来自业务的DB数据、程序服务的日志、用户的埋点数据和一些结构化数据。需要注意的是这些数据源都是可实时产生数据的流式数据通道，比如DB数据往往是来自MySQL binlog,Oracle Logminer等管道，而不是定时执行SQL去获取一批数据的管道。 </p>
 <ol start="2">
-<li>批处理中的排序，分组和缓存部分，上面已经说过，每个slot都会分配一个MemoryManager ，而在task运行过程中，在批处理中，往往存在对大量数据进行排序或者分组的操作，这些操作需要申请一定数量的内存进行。也会通过MemoryManager 进行内存的申请。</li>
+<li>dwd明细层</li>
 </ol>
+<p>在明细层，主要是为了解决重复建设的问题，需要按照主题构建统一的基础明细层，同时为了给下游提供直接可用的数据，还需要对这些进行清洗、过滤和扩维。</p>
+<ol start="3">
+<li>dws汇总层</li>
+</ol>
+<p>在汇总层，主要是对业务需求进行梳理得到共性维度、采用维度建模的方式建立明细宽表；同时对于一些固化统计需求，可以实现进行轻度汇总，形成汇总指标表，减轻下游的计算压力，并形成可复用的结果。</p>
+<p>从上面看出，实时数仓和离线数仓的分层非常相似，甚至连命名都是相同的。但仔细对比可以发现他们存在很大的不同。</p>
+<h6 id="1、与离线数仓相比，实时数仓的存储是不同"><a href="#1、与离线数仓相比，实时数仓的存储是不同" class="headerlink" title="1、与离线数仓相比，实时数仓的存储是不同"></a>1、与离线数仓相比，实时数仓的存储是不同</h6><p>在建立离线数仓时，整个存储都是在建立在Hive上，但在实时数仓中，同一份表数据，可能会同时存储在多个不同的地方，比如明细层、汇总层的数据会同时存放在Kafka和Hdfs中，但是像用户信息这些维表数据则会借助于MySQL、HBase或其他KV数据库存储。</p>
+<h6 id="2、与离线数仓相比，实时数仓的层次更少一些"><a href="#2、与离线数仓相比，实时数仓的层次更少一些" class="headerlink" title="2、与离线数仓相比，实时数仓的层次更少一些"></a>2、与离线数仓相比，实时数仓的层次更少一些</h6><p>从目前建设离线数仓的经验来看，离线数仓中ads应用层数据一般是在数仓内部，但实时数仓中，ads 应用层数据已经落入应用系统的存储介质中，可以把该层与数仓的表分离。</p>
+<p>实时处理数据的时候，每建一个层次，数据必然会产生一定的延迟。举例，在统计跨天相关的订单事件中的数据时，可能会等到 00:00:05 或者 00:00:10 再统计，确保 00:00 前的数据已经全部接受到位了，再进行统计。所以，汇总层的层次太多的话，就会更大的加重人为造成的数据延迟。</p>
+<h3 id="实时数仓架构"><a href="#实时数仓架构" class="headerlink" title="实时数仓架构"></a>实时数仓架构</h3><p>目前大部分企业已经基于Hive搭建了自己的离线数仓，而离线数仓明显无法满足实时计算、实时查询的需求，所以一般而言，为了同时满足实时和离线的需要，会采用经典的Lambda架构。Lambda架构的核心思想是把大数据系统拆分成三层：批量层，速度层和服务层。</p>
+<ul>
+<li>批量层负责数据集存储以及全量数据集的预查询。</li>
+<li>速度层主要负责对增量数据进行计算，生成实时的计算结构。</li>
+<li>服务层用于响应用户的查询请求，它将离线计算层和实时计算层的结果进行合并，得到最后的结果，返回给用户。</li>
+</ul>
+<p>Lambda体系架构通过批处理层提供了高延迟的精度，而速度层提供了低延迟近似值。但同时Lambda架构也有相应的缺点，他需要对同样的业务逻辑进行两次编程：一次为批量计算的系统，一次为流程处理的系统，两个系统走的是不同的计算代码，最后处理的结构容易不一致。为此有人提出了更先进的Kappa架构，不过由于目前的技术发展和篇幅原因，暂且不展开描述。</p>
+<p>尽管Lambda架构有着上述缺点，仍然因为它的可行性、扩展性和鲁棒性，而被应用在各企业的数据仓库中。</p>
+<p><img src="/2021/10/20/%E5%9F%BA%E4%BA%8EFlink%E7%9A%84%E5%AE%9E%E6%97%B6%E6%95%B0%E4%BB%93%E6%8E%A2%E7%B4%A2/image-20220220150745838.png" alt="image-20220220150745838"></p>
+<p>上述是一个典型的Lambda架构，利用Flink强大的实时计算能力，大部分的数据处理可以交由Flink完成，而为了数据的可靠性和容错，还会将数据保存在HDFS内作为备份，同时也可以供已有的离线数仓进行消费，减少离线任务的延时。在ads层则是根据业务需求可以将计算的结果存放不同的存储查询引擎中。</p>
+<h3 id="实时数仓的未来"><a href="#实时数仓的未来" class="headerlink" title="实时数仓的未来"></a>实时数仓的未来</h3><p>随着大数据技术的发展，特别是实时OLAP技术的迅速崛起，目前开源的OLAP引擎在性能，易用等方面有了很大的提升，如Doris、Presto等，加上数据湖技术的迅速发展，使得流批结合的方式变得简单，可以简化实时数仓的处理流程和架构设计。</p>
+<p><img src="/2021/10/20/%E5%9F%BA%E4%BA%8EFlink%E7%9A%84%E5%AE%9E%E6%97%B6%E6%95%B0%E4%BB%93%E6%8E%A2%E7%B4%A2/image-20220220150833138.png" alt="image-20220220150833138"></p>
+<p>数据从日志统一采集到消息队列，再到实时数仓，作为基础数据流的建设是统一的。之后对于日志类实时特征，实时大屏类应用走实时流计算。对于Binlog类业务分析走实时OLAP批处理。</p>
+<p>可以看到引入数据湖之后（图中的Hudi/Iceberg，可以简单理解为一种数据格式，本质上还是存储在HDFS或者其他oss文件系统），实时数仓在计算引擎和底层存储引入了一个中间层——数据湖，同时基于数据湖的ACID能力，可以解决传统离线数仓不支持高效修改的痛点，同时也简化了整体数据流水线处理的过程，降低了整个处理的延迟。但是目前数据湖的发展不是太成熟，相应的生态支持也比较少，所以应用的不多，不过社区比较活跃，而且大家也都看到了数据湖在数仓中的潜力，在日后应该会在实时数仓中占有一席之地。</p>
 
       
     </div>
     <footer class="article-footer">
-      <a data-url="http://example.com/2022/01/29/flink%E7%9A%84%E5%86%85%E5%AD%98%E7%AE%A1%E7%90%86%E6%9C%BA%E5%88%B6%E7%AE%80%E5%8D%95%E8%A7%A3%E6%9E%90/" data-id="ckyzvppji0000hg9jf88v84s4" data-title="Flink内存管理源码解读" class="article-share-link">Share</a>
+      <a data-url="http://example.com/2021/10/20/%E5%9F%BA%E4%BA%8EFlink%E7%9A%84%E5%AE%9E%E6%97%B6%E6%95%B0%E4%BB%93%E6%8E%A2%E7%B4%A2/" data-id="ckzuxjdfs0000tc793mvd6ttt" data-title="基于Flink的实时数仓探索" class="article-share-link">Teilen</a>
       
       
       
@@ -174,11 +156,322 @@
 
 
   
+    <article id="post-实时ID-Mapping标识唯一用户方案" class="h-entry article article-type-post" itemprop="blogPost" itemscope itemtype="https://schema.org/BlogPosting">
+  <div class="article-meta">
+    <a href="/2021/07/20/%E5%AE%9E%E6%97%B6ID-Mapping%E6%A0%87%E8%AF%86%E5%94%AF%E4%B8%80%E7%94%A8%E6%88%B7%E6%96%B9%E6%A1%88/" class="article-date">
+  <time class="dt-published" datetime="2021-07-20T06:47:53.000Z" itemprop="datePublished">2021-07-20</time>
+</a>
+    
+  </div>
+  <div class="article-inner">
+    
+    
+      <header class="article-header">
+        
+  
+    <h1 itemprop="name">
+      <a class="p-name article-title" href="/2021/07/20/%E5%AE%9E%E6%97%B6ID-Mapping%E6%A0%87%E8%AF%86%E5%94%AF%E4%B8%80%E7%94%A8%E6%88%B7%E6%96%B9%E6%A1%88/">实时ID-Mapping标识唯一用户方案</a>
+    </h1>
+  
+
+      </header>
+    
+    <div class="e-content article-entry" itemprop="articleBody">
+      
+        <h4 id="导读"><a href="#导读" class="headerlink" title="导读"></a>导读</h4><p>在大数据环境下，常出现企业各部门之间相对独立，数据各自保管存储的情况，因为对数据的认知角度截然不同，最终导致数据之间难以互通，形成孤岛。所以需要把碎片化的数据全部串联起来，消除数据孤岛，提供一个用户的完整信息视图。数仓、画像、推荐等模块开发中，我们都需要对每一条行为日志数据标记用户的唯一标识。</p>
+<h4 id="什么是ONEID"><a href="#什么是ONEID" class="headerlink" title="什么是ONEID"></a>什么是ONEID</h4><p><strong>ONE ID即id-mapping技术通俗的说就是把几份不同来源的数据，通过各种技术手段识别为同一个对象或主体。</strong>例如一个集团旗下有多个事业部，每个事业部都有庞大的用户群体，但是这些群体对于集团来说是相互独立的，并不能整合起来利用，而通过id-mapping就能把这些碎片化的数据链接起来，消除数据孤岛，使多个不同的领域数据结合起来释放巨大的价值。</p>
+<p>ONE ID有非常多用处，比如跨屏跟踪和跨设备跟踪，将一个用户的手机、PC、平板等设备的上的行为信息串联到一起。再比如精准的营销业务，他的一个重点的环节就是要把不同业务系统不同用户统一起来管理，将不同业务系统平台里的用户历史兴趣数据匹配起来。可以说，<strong>没有用户ONE ID，程序化营销可能就变成了盲目投放，他的精准投放的优势也就不存在了。</strong></p>
+<h4 id="现有技术的技术方案"><a href="#现有技术的技术方案" class="headerlink" title="现有技术的技术方案"></a>现有技术的技术方案</h4><p>现有的技术多是两大类</p>
+<p>一．将各系统埋数据抽象成“点”和“边”，用图计算来判断成同一个对象，从而构建一个映射字典。这种方案通用性比较高，但是容易出现数据多对多，一对多的情况。</p>
+<p>整体流程的具体实现为：</p>
+<p>1.将当日数据中的所有用户标识字段，及标志字段之间的关联，生成点集合 、边集合。</p>
+<p>2.将上一日的所有用户标识字段，及标志字段之间的关联，也生成点集合、边集合。</p>
+<p>3.将上面两类点集合、边集合合并到一起生成一个图。</p>
+<p>4.再对上述的图执行“最大连通子图”算法，得到一个连通子图结果。</p>
+<p>5.在从结果图中取到哪些id属于同一组，并生成一个唯一标识。</p>
+<p>6.将上面步骤生成的唯一标识去比对前日的ids-&gt;guid映射表（如果一个人已经存在guid，则沿用原来的guid（guid就是一个自然人的唯一id）。</p>
+<p>二．以离线的方式，根据对应业务的规则，通过hive等相关框架工具将全量的数据进行T+1的数据融合清洗成为一张全量的结果表。这种方案每天都计算全量的数据，在业务数据庞大的情况下很容易造成资源的浪费，并且根据业务规则编写的清洗脚本不易维护，增加成本。</p>
+<p>现有的技术都有着不同程度的缺陷以及不足，本申请提案基于大量不同场景下的实践，基于数据的横向属性等级和纵向维度属性值等级去做ID合并，底层引入列式key-value存储引擎和实时流计算引擎。跟上述两种方案不同的是，本提案引入实时计算框架提升数据写入和数据检索性能以及数据的实时性，同时引入两种等级概念保证数据的准确性。</p>
+<h6 id="现有技术方案存在问题"><a href="#现有技术方案存在问题" class="headerlink" title="现有技术方案存在问题"></a>现有技术方案存在问题</h6><ol>
+<li>多个自然人识别为同一自然人的问题，如：两个人同时用一个手机注册了账号，由于他们都关联了手机设备id，现有技术就会将这两个自然人识别成同一个自然人，不符合实际。而以上情况在实际的场景下也会经常出现。</li>
+<li>多个ID所属关系的问题，如当两人都用各自手机设备绑定自己的账号之后，其中一人使用另一人的手机设备登录了自己账号，这种情况下现有技术会将两个手机设备都绑定到其中一人，不符合实际情况。</li>
+<li>实时性较低，目前市面上的开源方案多是基于离线T+1数据处理，这样数据实时性会比较低。</li>
+<li>不支持动态的更新数据处理逻辑，在对应业务更新修改的情况下需要重新的部署、启动对应程序甚至重新开发，极大的增加了相关人员的工作量。</li>
+</ol>
+<h4 id="实时处理方案"><a href="#实时处理方案" class="headerlink" title="实时处理方案"></a>实时处理方案</h4><p>为了克服现有技术的不足，笔者总结一套旨在提供一种高时效性的方案，并且能完美一对一映射ID和自然人。</p>
+<p><img src="/2021/07/20/%E5%AE%9E%E6%97%B6ID-Mapping%E6%A0%87%E8%AF%86%E5%94%AF%E4%B8%80%E7%94%A8%E6%88%B7%E6%96%B9%E6%A1%88/wpsKkZmLW.jpg" alt="img"></p>
+<p>在本方案中，通过基于横向的ID属性等级和纵向维度属性值等级对数据进行判定，解决了数据经过处理之后相关ID和自然人不能一对一映射的问题，这是本方案的核心概念。为了使本领域技术人员更好的理解本申请提供的技术方案，下面对横向属性的等级和纵向维度属性值等级进行一个简单的说明：</p>
+<p>本方案将数据中的字段划分为两类：一类是ID属性，如身份证、手机号、微信id等属于自然人的标识信息。另一类是维度属性，如：数据产生时间、数据来源方式、数据来源地址、事件名称等属于当前数据的标识信息。</p>
+<p>横向ID属性等级，横向ID属性等级高低用来标识在一条数据中的哪个ID属性更加能标识一个自然人。举例来说：身份证相比手机号更能标识一个自然人，那么身份证等级高于手机号。它的作用就是用来找出数据中哪一条ID属性最能标识一个自然人。</p>
+<p>纵向维度属性值等级，纵向的维度属性值等级划分是根据各个纵向维度属性中的具体值进行划分，举个例子：数据中包含一个字段叫事件类型是用来记录记录用户产生数据时所触发的事件类型，选择该字段为纵向维度属性。这个纵向维度属性值存在下几种：点击事件、登录事件、注册事件、实名认证事件。其中明显实名认证事件中所携带的ID信息更加准确，那么实名认证事件的等级就高于其他几种行为事件。纵向维度属性值等级作用就是用来找出多条数据中携带的ID信息更加准确的那条数据。</p>
+<p>本方案实提供了一种数据实时标识唯一用户的方法，基于Flink分布式流式处理引擎以及hbase分布式存储，所述方法包括数据接受单元，数据合并单元，数据存储单元，数据处理单元，全局配置单元五个主要单元。下图为本方案的各个单元简单架构和数据流向：</p>
+<p><img src="/2021/07/20/%E5%AE%9E%E6%97%B6ID-Mapping%E6%A0%87%E8%AF%86%E5%94%AF%E4%B8%80%E7%94%A8%E6%88%B7%E6%96%B9%E6%A1%88/wpszu0gq8.jpg" alt="img"></p>
+<p>数据接受单元，根据配置信息，接入不同来源的数据，可以是埋点数据，也可以是实时业务数据库binlog，同时还支持离线数据，如hive数据仓库数据。将接数据接受单元，根据配置信息，接入不同来源的数据，可以是埋点数据，也可以是实时业务数据库binlog，同时还支持离线数据，如hive数据仓库数据。将接入的不同来源的数据统一解析成为所配置的预设格式，输出到下游数据处理单元。过滤到下游的数据需要包括数据产生时间，以及配置的属性字段。</p>
+<p>数据合并单元，该模块可以对多条数据进行合并处理，也就是说当一条数据无法提体现一个自然人的完整动作时候可以使用到这个模块将多条数据合并为一条。</p>
+<p>数据存储单元，数据存储单元使用hbase作为分布式的存储框架，hbase存放的rowkey格式为：{分区号}\u0002{属性名称}\u0002{属性值}，value值包括多个属性，其中必要的为one_id,event_time,另外还需要增加维度属性</p>
+<table>
+<thead>
+<tr>
+<th>row_key</th>
+<th>one_id</th>
+<th>event_time</th>
+<th>维度1</th>
+<th>维度2</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>主键</td>
+<td>唯一id</td>
+<td>发生时间</td>
+<td>维度值</td>
+<td>维度值</td>
+</tr>
+</tbody></table>
+<p>数据处理单元，本模块基于flink分布式处理框架开发。根据配置信息所给出的等级信息，接入的数据和数据存储单元中的hbase数据进行匹配，匹配判定当前数据是否属于系统已经存在的自然人，如能匹配则将当前数据赋予对应的唯一id，并且将数据输出到下游，匹配不上则生成一个新的唯一id输出到下游，同时更新数据存储单元中的数据。</p>
+<p>全局配置单元，该模块可以实时更新flink流式处理引擎中的业务和流程配置，可以实时更新数据纵向横向等级，实现一次部署，终身运行。</p>
+<p>为了使本技术领域人员更好的理解本方案，下面结合示例和具体实施方式对本方案进行进一步的详细说明。显然，所描述的实施例仅仅是本方案的一部分实施例，而不是全部的实施例。</p>
+<p>根据配置信息，接入不同来源的数据。可以理解到的是，本方案接入数据可来源于不同的系统中的不同业务数据，根据配置中的信息，动态的接入不同来源的数据然后对其进行清洗和转化，并且输出到数据处理单元进行数据处理。</p>
+<p>数据存储单元是用做于存储数据的，本方案摒弃了传统的宽表存储的方式，使用K-V的形式，将数据存储为高表，高表和宽表如下所示：</p>
+<p>宽表：</p>
+<table>
+<thead>
+<tr>
+<th>one_id（唯一ID）</th>
+<th>id_card(身份证)</th>
+<th>Phone（手机号）</th>
+<th>open_id（设备id）</th>
+<th>user_id（用户id）</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>1</td>
+<td>445</td>
+<td>136</td>
+<td>O1</td>
+<td>U1</td>
+</tr>
+</tbody></table>
+<p>高表：</p>
+<table>
+<thead>
+<tr>
+<th>列值(hash值\u0002字段名\u0002字段值)</th>
+<th>唯一id</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>Hash值\u0002id_card\u0002445</td>
+<td>1</td>
+</tr>
+<tr>
+<td>Hash值\u0002phone\u0002136</td>
+<td>1</td>
+</tr>
+<tr>
+<td>Hash值\u0002open_id\u0002o1</td>
+<td>1</td>
+</tr>
+<tr>
+<td>Hash值\u0002user_id\u0002u1</td>
+<td>1</td>
+</tr>
+</tbody></table>
+<p>数据合并处理单元适用于处理多条数据才能体现一个行为的复杂数据，比如当一个自然人的两个动作产生的两条数据表示一个具体的行为，下游要通过这个行为来做数据处理，那么就需要数据合并处理单元将这两个动作产生的两条数据合并为一条行为数据输出到下游，具体实现为两条数据需要根据其中一个字段进行关联，先到达的数据会存放在flink的state中等待这个字段关联的数据到达之后合并成同一条数据输出到下游进行数据处理。</p>
+<p>数据处理单元是对当前的数据进行唯一id融合的单元，下面给出一个详细的实施例，当前数据经过接入单元处理后如下所示：</p>
+<table>
+<thead>
+<tr>
+<th>行号</th>
+<th>id_card(身份证)</th>
+<th>Phone（手机号）</th>
+<th>open_id（设备id）</th>
+<th>user_id（用户id）</th>
+<th>event_name</th>
+<th>event_time</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>1</td>
+<td>445</td>
+<td></td>
+<td>O1</td>
+<td></td>
+<td>绑定</td>
+<td>1619764657236</td>
+</tr>
+<tr>
+<td>2</td>
+<td></td>
+<td>136</td>
+<td>O2</td>
+<td></td>
+<td>订单</td>
+<td>1619764657238</td>
+</tr>
+<tr>
+<td>3</td>
+<td></td>
+<td>136</td>
+<td>O1</td>
+<td>U3</td>
+<td>认证</td>
+<td>1619764657239</td>
+</tr>
+</tbody></table>
+<p>从上图可以得知，当前数据中存在的横向ID属性有id_card、phone 、open_id 、 user_id四个，纵向维度属性有一个event_name。<br>假设当前从配置中获取的横向ID属性等级如下：<br>id_card &gt; phone &gt; open_id &gt; user_id<br>假设当前从配置中获取event_name的纵向维度属性值等级如下：<br>绑定 &gt; 认证 &gt; 下单 &gt; 浏览<br>1.根据当前数据各个属性字段去高表中进行查询对应的OneID，拿到当前数据最高属性等级字段对应的OneID作为此条数据OneID。<br>2.当都没有查找到对应的OneID，则新生成一个OneID。<br>3.根据当前行为等级进行判定当前ID是否更新OneID，如果当前数据中的event_name纵向维度属性值等级高于当前属性在高表中event_name对应的等级，则更新高表。如：当前埋点事件微信unionID为1,高表已经存在unionID为1的数据以及对应OneID，如果本次纵向维度属性值等级高于高表unionID对应的纵向等级，则更新高表中此unionID对应的OneID、event_name和事件时间。反之则不更新。当纵向维度属性值等级相同时，根据事件时间进行更新。如：当前埋点事件微信unionID为1,高表已经存在unionID为1的数据对应OneID，如果本数据中的纵向属性值等级等于已存在的unionID对应的纵向属性值等级，并且本数据中的事件时间大于已存在的unionID对应的事件时间，则更新高表此unionID对应的OneID、event_name和事件时间，反之则不更新。<br>按照顺序执行逻辑，如下所示：<br>1.执行行号为1的埋点数据：<br>由于在高表找不到，所以会新生成一个one_id为1。高表如下图所示：</p>
+<table>
+<thead>
+<tr>
+<th>row_key</th>
+<th>one_id</th>
+<th>event_name</th>
+<th>event_time</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>id_card\u0002445</td>
+<td>1</td>
+<td>绑定</td>
+<td>1619764657236</td>
+</tr>
+<tr>
+<td>open_id\u0002O1</td>
+<td>1</td>
+<td>绑定</td>
+<td>1619764657236</td>
+</tr>
+</tbody></table>
+<p>2.执行号为2的埋点数据：<br>按照id属性等级查找，由于手机号和open_id都找不到one_id，则新生成一个one_id，one_id为2。高表如下图所示：</p>
+<table>
+<thead>
+<tr>
+<th>row_key</th>
+<th>one_id</th>
+<th>event_name</th>
+<th>event_time</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>id_card\u0002445</td>
+<td>1</td>
+<td>绑定</td>
+<td>1619764657236</td>
+</tr>
+<tr>
+<td>open_id\u0002O1</td>
+<td>1</td>
+<td>绑定</td>
+<td>1619764657236</td>
+</tr>
+<tr>
+<td>phone\u0002136</td>
+<td>2</td>
+<td>订单</td>
+<td>1619764657238</td>
+</tr>
+<tr>
+<td>open_id\u0002O2</td>
+<td>2</td>
+<td>订单</td>
+<td>1619764657238</td>
+</tr>
+</tbody></table>
+<p>3.执行行号为3的埋点数据：<br>按照id属性等级查找，手机号136找到对应的one_id为2，open_id为O1对应的的one_id为1，由于手机号的id属性等级比open_id的等级高，则此次使用手机号做id合并，所以本条数据对应的one_id为2.接下来判断纵向属性值等级，由于手机号136的上一次event_name为订单，对应的等级低于此次，则event_name更新为认证。而对于open_id，由于本次open_id的event_name等级比上一次的低（认证 &lt; 绑定），则对于opne_id不做任何调整。对于user_id，由于不存在one_id，则直接更新即可。本次处理完成之后高表如下所示：</p>
+<table>
+<thead>
+<tr>
+<th>row_key</th>
+<th>one_id</th>
+<th>event_name</th>
+<th>event_time</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>id_card\u0002445</td>
+<td>1</td>
+<td>绑定</td>
+<td>1619764657236</td>
+</tr>
+<tr>
+<td>open_id\u0002O1</td>
+<td>1</td>
+<td>绑定</td>
+<td>1619764657236</td>
+</tr>
+<tr>
+<td>phone\u0002136</td>
+<td>2</td>
+<td>认证</td>
+<td>1619764657239</td>
+</tr>
+<tr>
+<td>open_id\u0002O2</td>
+<td>2</td>
+<td>订单</td>
+<td>1619764657238</td>
+</tr>
+<tr>
+<td>user_id\u0002U3</td>
+<td>2</td>
+<td>认证</td>
+<td>1619764657239</td>
+</tr>
+</tbody></table>
+<p>最后，将高表导出转成宽表，这里有多种实现方式。</p>
+<p>可选的，通过hive建立hbase的映射表，根据one_id进行分组，将高表的数据转化为宽表数据。</p>
+<p>宽表如下图所示：</p>
+<table>
+<thead>
+<tr>
+<th>one_id</th>
+<th>id_card</th>
+<th>phone</th>
+<th>open_id</th>
+<th>user_id</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>1</td>
+<td>445</td>
+<td></td>
+<td>O1</td>
+<td></td>
+</tr>
+<tr>
+<td>2</td>
+<td></td>
+<td>136</td>
+<td>O2</td>
+<td>U3</td>
+</tr>
+</tbody></table>
+<p>全局配置单元是本方案中一个重要的模块，他能实时更新数据处理单元、数据接入单元中的一些业务配置和数据处理逻辑。</p>
+<p>可以理解的是，当想更改当前的一些数据处理逻辑或者数据接入逻辑时，由于实时作业一般不会随意停止，就可以通过全局配置单元修改程序逻辑。比如想要修改横纵向等级。如原本的open_id等级大于user_id，但是经过某些业务调整需要将user_id的等级提高，就可以通过全局配置单元修改横向等级配置实时同步到处理单元中。</p>
+<p>可选的，实施人员可以通过web页面方式将配置信息同步到mysql当中，自定义source每隔一段固定时间就拉去mysql中的配置信息，然后通过flink内部的广播流广播到各个计算节点（taskmanager），这样使得各个节点都能同步到最新的全局配置。</p>
+<p>通过本方案,我们可以接入不同数据源和不同系统的实时埋点数据，通过id的关联关系，将各个系统各个数据源的数据根据id属性的关联关系识别为唯一的一个自然人，并且具有极高的实效性。通过本方案，我们就能更加全面的、完整的了解各个系统的用户，从而更好的构建上层应用。</p>
+
+      
+    </div>
+    <footer class="article-footer">
+      <a data-url="http://example.com/2021/07/20/%E5%AE%9E%E6%97%B6ID-Mapping%E6%A0%87%E8%AF%86%E5%94%AF%E4%B8%80%E7%94%A8%E6%88%B7%E6%96%B9%E6%A1%88/" data-id="ckzux4ae00000gm79d6e3gyzb" data-title="实时ID-Mapping标识唯一用户方案" class="article-share-link">Teilen</a>
+      
+      
+      
+  <ul class="article-tag-list" itemprop="keywords"><li class="article-tag-list-item"><a class="article-tag-list-link" href="/tags/ID-MAPPING/" rel="tag">ID-MAPPING</a></li></ul>
+
+    </footer>
+  </div>
+  
+</article>
+
+
+
+  
 
 
   <nav id="page-nav">
     
-    <a class="extend prev" rel="prev" href="/">&laquo; Prev</a><a class="page-number" href="/">1</a><span class="page-number current">2</span>
+    <a class="extend prev" rel="prev" href="/">&laquo; zurück</a><a class="page-number" href="/">1</a><span class="page-number current">2</span>
   </nav>
 
 </section>
@@ -192,7 +485,7 @@
   <div class="widget-wrap">
     <h3 class="widget-title">Tags</h3>
     <div class="widget">
-      <ul class="tag-list" itemprop="keywords"><li class="tag-list-item"><a class="tag-list-link" href="/tags/ID-MAPPING/" rel="tag">ID-MAPPING</a></li><li class="tag-list-item"><a class="tag-list-link" href="/tags/druid/" rel="tag">druid</a></li><li class="tag-list-item"><a class="tag-list-link" href="/tags/flink/" rel="tag">flink</a></li></ul>
+      <ul class="tag-list" itemprop="keywords"><li class="tag-list-item"><a class="tag-list-link" href="/tags/ID-MAPPING/" rel="tag">ID-MAPPING</a></li><li class="tag-list-item"><a class="tag-list-link" href="/tags/azkaban/" rel="tag">azkaban</a></li><li class="tag-list-item"><a class="tag-list-link" href="/tags/druid/" rel="tag">druid</a></li><li class="tag-list-item"><a class="tag-list-link" href="/tags/flink/" rel="tag">flink</a></li></ul>
     </div>
   </div>
 
@@ -202,16 +495,16 @@
   <div class="widget-wrap">
     <h3 class="widget-title">Tag Cloud</h3>
     <div class="widget tagcloud">
-      <a href="/tags/ID-MAPPING/" style="font-size: 10px;">ID-MAPPING</a> <a href="/tags/druid/" style="font-size: 20px;">druid</a> <a href="/tags/flink/" style="font-size: 15px;">flink</a>
+      <a href="/tags/ID-MAPPING/" style="font-size: 10px;">ID-MAPPING</a> <a href="/tags/azkaban/" style="font-size: 10px;">azkaban</a> <a href="/tags/druid/" style="font-size: 20px;">druid</a> <a href="/tags/flink/" style="font-size: 15px;">flink</a>
     </div>
   </div>
 
   
     
   <div class="widget-wrap">
-    <h3 class="widget-title">Archives</h3>
+    <h3 class="widget-title">Archiv</h3>
     <div class="widget">
-      <ul class="archive-list"><li class="archive-list-item"><a class="archive-list-link" href="/archives/2022/02/">February 2022</a></li><li class="archive-list-item"><a class="archive-list-link" href="/archives/2022/01/">January 2022</a></li></ul>
+      <ul class="archive-list"><li class="archive-list-item"><a class="archive-list-link" href="/archives/2022/01/">January 2022</a></li><li class="archive-list-item"><a class="archive-list-link" href="/archives/2021/11/">November 2021</a></li><li class="archive-list-item"><a class="archive-list-link" href="/archives/2021/10/">October 2021</a></li><li class="archive-list-item"><a class="archive-list-link" href="/archives/2021/07/">July 2021</a></li></ul>
     </div>
   </div>
 
@@ -219,28 +512,28 @@
   
     
   <div class="widget-wrap">
-    <h3 class="widget-title">Recent Posts</h3>
+    <h3 class="widget-title">letzter Beitrag</h3>
     <div class="widget">
       <ul>
         
           <li>
-            <a href="/2022/02/20/%E5%9F%BA%E4%BA%8EFlink%E7%9A%84%E5%AE%9E%E6%97%B6%E6%95%B0%E4%BB%93%E6%8E%A2%E7%B4%A2/">基于Flink的实时数仓探索</a>
+            <a href="/2022/01/29/flink%E7%9A%84%E5%86%85%E5%AD%98%E7%AE%A1%E7%90%86%E6%9C%BA%E5%88%B6%E7%AE%80%E5%8D%95%E8%A7%A3%E6%9E%90/">Flink内存管理源码解读</a>
           </li>
         
           <li>
-            <a href="/2022/02/20/%E5%AE%9E%E6%97%B6ID-Mapping%E6%A0%87%E8%AF%86%E5%94%AF%E4%B8%80%E7%94%A8%E6%88%B7%E6%96%B9%E6%A1%88/">实时ID-Mapping标识唯一用户方案</a>
+            <a href="/2022/01/20/azkaban%E6%89%A7%E8%A1%8C%E6%B5%81%E7%A8%8B%E6%BA%90%E7%A0%81%E5%88%86%E6%9E%90/">azkaban执行流程源码分析</a>
           </li>
         
           <li>
-            <a href="/2022/02/19/druid%E4%B8%ADsql%E6%A8%A1%E5%9D%97%E5%88%86%E6%9E%90/">druid中sql模块分析</a>
+            <a href="/2021/11/19/druid%E4%B8%ADsql%E6%A8%A1%E5%9D%97%E5%88%86%E6%9E%90/">druid中sql模块分析</a>
           </li>
         
           <li>
-            <a href="/2022/02/19/druid%E4%B8%AD%E5%8F%91%E5%B8%83%E5%8D%B8%E8%BD%BDsegment%E5%92%8C%E6%9C%8D%E5%8A%A1%E6%BA%90%E7%A0%81%E8%A7%A3%E6%9E%90/">druid中发布卸载segment和服务源码解析</a>
+            <a href="/2021/11/19/druid%E4%B8%AD%E5%8F%91%E5%B8%83%E5%8D%B8%E8%BD%BDsegment%E5%92%8C%E6%9C%8D%E5%8A%A1%E6%BA%90%E7%A0%81%E8%A7%A3%E6%9E%90/">druid中发布卸载segment和服务源码解析</a>
           </li>
         
           <li>
-            <a href="/2022/02/19/druid%E4%B8%AD%E8%81%9A%E5%90%88%E5%87%BD%E6%95%B0%E5%AE%9E%E7%8E%B0%E6%BA%90%E7%A0%81%E8%A7%A3%E6%9E%90/">druid中聚合函数实现源码解析</a>
+            <a href="/2021/11/19/druid%E4%B8%AD%E8%81%9A%E5%90%88%E5%87%BD%E6%95%B0%E5%AE%9E%E7%8E%B0%E6%BA%90%E7%A0%81%E8%A7%A3%E6%9E%90/">druid中聚合函数实现源码解析</a>
           </li>
         
       </ul>

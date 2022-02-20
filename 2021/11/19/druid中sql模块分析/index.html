@@ -1,0 +1,330 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  
+  
+  <title>druid中sql模块分析 | Big Face Cat</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
+  <meta name="description" content="简介​    sql模块的代码目为一个module是druid-sql。用于对sql进行一个解析，底层使用apache calcate进行实现，本文对druid中的sql模块进行一个分析。 在SqlModule中配置了多个子Module：  DruidCalciteSchemaModule CalcitePlannerModule SqlAggregationModule DruidViewMod">
+<meta property="og:type" content="article">
+<meta property="og:title" content="druid中sql模块分析">
+<meta property="og:url" content="http://example.com/2021/11/19/druid%E4%B8%ADsql%E6%A8%A1%E5%9D%97%E5%88%86%E6%9E%90/index.html">
+<meta property="og:site_name" content="Big Face Cat">
+<meta property="og:description" content="简介​    sql模块的代码目为一个module是druid-sql。用于对sql进行一个解析，底层使用apache calcate进行实现，本文对druid中的sql模块进行一个分析。 在SqlModule中配置了多个子Module：  DruidCalciteSchemaModule CalcitePlannerModule SqlAggregationModule DruidViewMod">
+<meta property="og:locale">
+<meta property="og:image" content="http://example.com/2021/11/19/druid%E4%B8%ADsql%E6%A8%A1%E5%9D%97%E5%88%86%E6%9E%90/image-20220219230229332.png">
+<meta property="og:image" content="http://example.com/2021/11/19/druid%E4%B8%ADsql%E6%A8%A1%E5%9D%97%E5%88%86%E6%9E%90/image-20220219230553212.png">
+<meta property="og:image" content="http://example.com/2021/11/19/druid%E4%B8%ADsql%E6%A8%A1%E5%9D%97%E5%88%86%E6%9E%90/image-20220219230615548.png">
+<meta property="og:image" content="http://example.com/2021/11/19/druid%E4%B8%ADsql%E6%A8%A1%E5%9D%97%E5%88%86%E6%9E%90/image-20220219230644478.png">
+<meta property="article:published_time" content="2021-11-19T14:55:44.000Z">
+<meta property="article:modified_time" content="2022-02-20T08:27:39.468Z">
+<meta property="article:author" content="Lime">
+<meta property="article:tag" content="druid">
+<meta name="twitter:card" content="summary">
+<meta name="twitter:image" content="http://example.com/2021/11/19/druid%E4%B8%ADsql%E6%A8%A1%E5%9D%97%E5%88%86%E6%9E%90/image-20220219230229332.png">
+  
+    <link rel="alternate" href="/atom.xml" title="Big Face Cat" type="application/atom+xml">
+  
+  
+    <link rel="shortcut icon" href="/favicon.png">
+  
+  
+    
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/typeface-source-code-pro@0.0.71/index.min.css">
+
+  
+  
+<link rel="stylesheet" href="/css/style.css">
+
+  
+    
+<link rel="stylesheet" href="/fancybox/jquery.fancybox.min.css">
+
+  
+<meta name="generator" content="Hexo 6.0.0"></head>
+
+<body>
+  <div id="container">
+    <div id="wrap">
+      <header id="header">
+  <div id="banner"></div>
+  <div id="header-outer" class="outer">
+    <div id="header-title" class="inner">
+      <h1 id="logo-wrap">
+        <a href="/" id="logo">Big Face Cat</a>
+      </h1>
+      
+    </div>
+    <div id="header-inner" class="inner">
+      <nav id="main-nav">
+        <a id="main-nav-toggle" class="nav-icon"></a>
+        
+          <a class="main-nav-link" href="/">Home</a>
+        
+          <a class="main-nav-link" href="/archives">Archives</a>
+        
+      </nav>
+      <nav id="sub-nav">
+        
+          <a id="nav-rss-link" class="nav-icon" href="/atom.xml" title="RSS Feed"></a>
+        
+        <a id="nav-search-btn" class="nav-icon" title="Suche"></a>
+      </nav>
+      <div id="search-form-wrap">
+        <form action="//google.com/search" method="get" accept-charset="UTF-8" class="search-form"><input type="search" name="q" class="search-form-input" placeholder="Suche"><button type="submit" class="search-form-submit">&#xF002;</button><input type="hidden" name="sitesearch" value="http://example.com"></form>
+      </div>
+    </div>
+  </div>
+</header>
+
+      <div class="outer">
+        <section id="main"><article id="post-druid中sql模块分析" class="h-entry article article-type-post" itemprop="blogPost" itemscope itemtype="https://schema.org/BlogPosting">
+  <div class="article-meta">
+    <a href="/2021/11/19/druid%E4%B8%ADsql%E6%A8%A1%E5%9D%97%E5%88%86%E6%9E%90/" class="article-date">
+  <time class="dt-published" datetime="2021-11-19T14:55:44.000Z" itemprop="datePublished">2021-11-19</time>
+</a>
+    
+  </div>
+  <div class="article-inner">
+    
+    
+      <header class="article-header">
+        
+  
+    <h1 class="p-name article-title" itemprop="headline name">
+      druid中sql模块分析
+    </h1>
+  
+
+      </header>
+    
+    <div class="e-content article-entry" itemprop="articleBody">
+      
+        <h4 id="简介"><a href="#简介" class="headerlink" title="简介"></a>简介</h4><p>​    sql模块的代码目为一个module是druid-sql。用于对sql进行一个解析，底层使用apache calcate进行实现，本文对druid中的sql模块进行一个分析。</p>
+<p>在SqlModule中配置了多个子Module：</p>
+<ul>
+<li>DruidCalciteSchemaModule</li>
+<li>CalcitePlannerModule</li>
+<li>SqlAggregationModule</li>
+<li>DruidViewModule</li>
+<li>SqlHttpModule</li>
+<li>AvaticaModule</li>
+</ul>
+<h5 id="SqlHttpModule配置通过http执行sql查询"><a href="#SqlHttpModule配置通过http执行sql查询" class="headerlink" title="SqlHttpModule配置通过http执行sql查询"></a>SqlHttpModule配置通过http执行sql查询</h5><p>在该Module中主要配置了SqlResource，用于支持通过http方式使用sql进行查询。 http查询路径：/druid/v2/sql/ POST 请求 参数（通常只需要设置query参数）：</p>
+<figure class="highlight json"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br></pre></td><td class="code"><pre><span class="line">&#123;</span><br><span class="line">    <span class="attr">&quot;query&quot;</span>: <span class="string">&quot;select count(*) from test&quot;</span>,</span><br><span class="line">    <span class="attr">&quot;resultFormat&quot;</span>: <span class="string">&quot;OBJECT&quot;</span>,<span class="comment">//默认：OBJECT,支持：ARRAY，ARRAYLINES，CSV，OBJECT，OBJECTLINES</span></span><br><span class="line">    <span class="attr">&quot;header&quot;</span>: <span class="literal">false</span>, <span class="comment">// 默认false,当设置为true时，返回结果将包含标题行</span></span><br><span class="line">    <span class="attr">&quot;context&quot;</span>: &#123;&#125;, <span class="comment">//可设置查询超时等参数</span></span><br><span class="line">    <span class="attr">&quot;parameters&quot;</span>:[  <span class="comment">//sql查询参数</span></span><br><span class="line">        &#123;</span><br><span class="line">            <span class="attr">&quot;type&quot;</span>: <span class="string">&quot;INTEGER&quot;</span> <span class="comment">// 各种数据类型，包含BOOLEAN/INTEGER/DECIMAL/DOUBLE/VARCHAR等</span></span><br><span class="line">            <span class="string">&quot;value&quot;</span>: <span class="string">&quot;&quot;</span> <span class="comment">//根据类型设置值</span></span><br><span class="line">        &#125;</span><br><span class="line">    ] <span class="comment">//</span></span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<h6 id="sql执行过程中的事务状态变化："><a href="#sql执行过程中的事务状态变化：" class="headerlink" title="sql执行过程中的事务状态变化："></a>sql执行过程中的事务状态变化：</h6><figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br></pre></td><td class="code"><pre><span class="line">NEW -()-&gt; INITIALIZED -&gt; PLANNED -&gt; AUTHORIZING -&gt; AUTHORIZED -&gt; EXECUTING -&gt; DONE</span><br><span class="line">                                              	     -&gt; UNAUTHORIZED -&gt; DONE</span><br></pre></td></tr></table></figure>
+
+<h6 id="sql执行计划逻辑"><a href="#sql执行计划逻辑" class="headerlink" title="sql执行计划逻辑"></a>sql执行计划逻辑</h6><p>1.首先调用lifecycle.initialize初始化lifecycle，使用UUID.randomUUID().toString()生成唯一的sqlQueryId<br>2.然后调用<br>3.调用lifecycle.planAndAuthorize生成执行计划并进行认证。目前认证没有提供完整实现，后续再完善。该方法主要用于生成执行计划。<br>4.通过PlannerFactory创建DruidPlanner。先创建PlannerContext、QueryMaker和FrameworkConfig。<br>    PlannerContext： 生产执行计划的上下文环境，包含很多信息</p>
+<figure class="highlight java"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">final</span> DruidOperatorTable operatorTable, </span><br><span class="line">  <span class="keyword">final</span> ExprMacroTable macroTable,</span><br><span class="line">  <span class="keyword">final</span> PlannerConfig plannerConfig,</span><br><span class="line">  <span class="keyword">final</span> DateTime localNow,</span><br><span class="line">  <span class="keyword">final</span> Map&lt;String, Object&gt; queryContext,</span><br><span class="line">  <span class="keyword">final</span> List&lt;TypedValue&gt; parameters,</span><br><span class="line">  <span class="keyword">final</span> AuthenticationResult authenticationResult</span><br></pre></td></tr></table></figure>
+
+<ul>
+<li>QueryMaker: 通过QueryLifecycle执行解析sql得到的Druid的Query，并将结果转换为合适类型返回。</li>
+<li>FrameworkConfig：calcite的接口，用于配置生成执行计划需要的一些配置信息，包含如下配置：</li>
+<li>SqlParser.Config：可配置解析sql时的大小写敏感（设置为true）、引号类型（双引号）、是否转换为大小写（设置为不转换）等。</li>
+<li>DruidConvertletTable：一些操作的转换，暂时没做特别处理。</li>
+<li>DruidOperatorTable：sql函数或操作转为为druid相应操作的映射表，比如count函数转换为CountAggregator。</li>
+<li>DruidRexExecutor：用于做常量折叠，精简表达式</li>
+<li>DruidTypeSystem：数据类型，各数据类型的长度/精度/大小写敏感，自增等，比如VARCHAR类型的最大长度为65535。基本沿用了calcite的默认实现RelDataTypeSystemImpl。</li>
+<li>SchemaPlus：默认Schema配置，默认Schema设置为druid。</li>
+<li>sqlToRelConverterConfig：配置sql解析树转为关系代数表达式的配置</li>
+</ul>
+<p>5.生成DruidPlanner后就调用planner的plan()方法开始生成执行计划。DruidPlanner生成执行计划的流程如下：</p>
+<p>(1) 调用Calcite的Planner接口的parse()方法进行Sql解析，该接口提供的接口包括：</p>
+<p>① parse():将SQL解析为解析树<br>② validate():校验SQL解析树，通常用于校验被修改后的SQL解析树。<br>③ rel()：将SQL解析树转换为关系表达式语法输。<br>④ transform(): 基于特殊优化对关系表达式语法树进行优化，并转换为优化后的关系表达式语法树。<br>    Calcite提供了一个默认实现org.apache.calcite.prepare.PlannerImpl，DruidPlanner在构造时使用FrameworkConfig创建了一个PlannerImpl实例。</p>
+<p>(2) 采用访问者模式，使用SqlParameterizerShuttle作为一个访问者便利SQL解析树，并替换其中的参数。</p>
+<p>(3) 替换参数后调用Planner的validate()方法校验SQL解析树。</p>
+<p>(4) 调用Planner的rel()方法将SQL解析树转换为关系表达式语法树。</p>
+<p>(5) 调用内部方法planWithDruidConvention()对SQL解析树做一些优化。</p>
+<p>① 检查sqlOuterLimit参数，如果设置了值，则相当于默认加了limit；</p>
+<p>② 再次采用访问者模式替换参数变量；</p>
+<p>③ 调用planner的transform()方法将SQL解析树的根节点RelNode转为DruidRel。</p>
+<p>④ 如果是Explain类型的SQL语句，则返回解析树，如果是查询类型的SQL，则调用DruidRel的runQuery()方法进行执行。</p>
+<p>DruidRel是一个抽象类，继承了AbstractRelNode抽象类，而抽象类是RelNode接口的一个base实现，RelNode是一个关系表达式接口。DruidRel提供了以下几个实现类：</p>
+<ul>
+<li>DruidJoinQueryRel：JOIN类型的查询</li>
+<li>DruidOuterQueryRel：最外层的查询，里面可能包含子查询。</li>
+<li>DruidQueryRel：普通单表的查询</li>
+<li>DruidUnionDataSourceRel：UNION ALL类型的语句，只支持常规表类型的数据</li>
+<li>DruidUnionRel：UNION ALL类型的语句，支持任何类型的数据，比如子查询、Lookup等</li>
+</ul>
+<p>6.最后调用lifecycle的execute()方法，返回执行结果。注意，结果在DruidRel的runQuery()方法执行后就已经获得。<br>7.通过Yielder将Sequence封装的数据流式返回客户端。</p>
+<h5 id="sql处理流程"><a href="#sql处理流程" class="headerlink" title="sql处理流程"></a>sql处理流程</h5><p>本节主要对druid的SQL执行过程执行阐述。</p>
+<p>druid支持使用restAPI、calcites-jdbc、二种方式进行SQL查询，其核心都是使用calcites将SQL转化为json查询体，然后走json查询的逻辑。</p>
+<p><img src="/2021/11/19/druid%E4%B8%ADsql%E6%A8%A1%E5%9D%97%E5%88%86%E6%9E%90/image-20220219230229332.png" alt="image-20220219230229332"></p>
+<p>这是使用restAPI进行sql查询的处理过程，核心是DruidPlaner使用calcites进行SQL的解释和转化生成原生的json解析。中间会经过parse、validate、rel、planWithDruidConvention四个阶段：<br>parse: 进行分词、词法分析并生成抽象语法树（AST），这是一个比较原始，没有经过优化的语法树；编写的语法文件也是在这里生效进行解析。<br>validate: 利用Druid提供的元数据和语法规则进行语法检查。<br>rel: 主要进行语法分析，目的是将第一步parse生成的sqlnode表示语法树转化为relnode表示的语法树，以便进行关系代数的运算，可以理解成是一个逻辑执行计划。<br>planWithDruidConvention：利用calcites的优化器（HepPlaner或VolcanoPlaner）、元数据和配置的RelOptRule对第三步生成的语法树进行优化，生成DruidRel对象，该DruidRel可通过runQuery方法执行真正的查询。</p>
+<h6 id="如何扩展和新增自定义sql函数"><a href="#如何扩展和新增自定义sql函数" class="headerlink" title="如何扩展和新增自定义sql函数"></a>如何扩展和新增自定义sql函数</h6><p>​    本节介绍如何给druid新增一个函数。以增加一个BITMAP_DISTINCT的聚合函数为例。<br>​    在io.druid.sql.calcite.aggregation.builtin包中新增一个实现了SqlAggregator接口的BitmapUniqueSqlAggregator类<br>在该类的calciteFunction()方法中返回一个SqlAggFunction实例，代码示例如下：</p>
+<figure class="highlight java"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br></pre></td><td class="code"><pre><span class="line"><span class="meta">@Override</span></span><br><span class="line"><span class="function"><span class="keyword">public</span> SqlAggFunction <span class="title">calciteFunction</span><span class="params">()</span></span></span><br><span class="line"><span class="function"></span>&#123;</span><br><span class="line">   <span class="comment">//也可以使用单例</span></span><br><span class="line">  <span class="keyword">return</span> <span class="keyword">new</span> SqlAggFunction(            </span><br><span class="line">          <span class="string">&quot;BITMAP_DISTINCT&quot;</span>,      <span class="comment">//函数名</span></span><br><span class="line">          <span class="keyword">null</span>,            </span><br><span class="line">          SqlKind.OTHER_FUNCTION,     <span class="comment">//函数类型</span></span><br><span class="line">          ReturnTypes.explicit(SqlTypeName.BIGINT),    <span class="comment">//函数返回类型</span></span><br><span class="line">          InferTypes.VARCHAR_1024,   <span class="comment">//函数输入类型</span></span><br><span class="line">          OperandTypes.ANY,          <span class="comment">//函数类型检查</span></span><br><span class="line">          SqlFunctionCategory.STRING,  </span><br><span class="line">          <span class="keyword">false</span>,</span><br><span class="line">          <span class="keyword">false</span>)</span><br><span class="line">  &#123;</span><br><span class="line">    </span><br><span class="line">  &#125;;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<ul>
+<li>在toDruidAggregation()方法中根据入参构造LuceneAggregatorFactory，在本例中将构建BitmapUniqueAggregatorFactory，代码如下：</li>
+</ul>
+<figure class="highlight java"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br><span class="line">33</span><br><span class="line">34</span><br><span class="line">35</span><br><span class="line">36</span><br><span class="line">37</span><br><span class="line">38</span><br><span class="line">39</span><br><span class="line">40</span><br><span class="line">41</span><br><span class="line">42</span><br><span class="line">43</span><br><span class="line">44</span><br><span class="line">45</span><br><span class="line">46</span><br><span class="line">47</span><br><span class="line">48</span><br><span class="line">49</span><br><span class="line">50</span><br><span class="line">51</span><br><span class="line">52</span><br><span class="line">53</span><br><span class="line">54</span><br></pre></td><td class="code"><pre><span class="line"><span class="meta">@Override</span></span><br><span class="line"> <span class="function"><span class="keyword">public</span> Aggregation <span class="title">toDruidAggregation</span><span class="params">(</span></span></span><br><span class="line"><span class="params"><span class="function">         PlannerContext plannerContext,</span></span></span><br><span class="line"><span class="params"><span class="function">         RowSignature rowSignature,</span></span></span><br><span class="line"><span class="params"><span class="function">         VirtualColumnRegistry virtualColumnRegistry,</span></span></span><br><span class="line"><span class="params"><span class="function">         RexBuilder rexBuilder,</span></span></span><br><span class="line"><span class="params"><span class="function">         String name,</span></span></span><br><span class="line"><span class="params"><span class="function">         AggregateCall aggregateCall,</span></span></span><br><span class="line"><span class="params"><span class="function">         Project project,</span></span></span><br><span class="line"><span class="params"><span class="function">         List&lt;Aggregation&gt; existingAggregations,</span></span></span><br><span class="line"><span class="params"><span class="function">         <span class="keyword">boolean</span> finalizeAggregations</span></span></span><br><span class="line"><span class="params"><span class="function"> )</span></span>&#123;</span><br><span class="line">   <span class="keyword">final</span> RexNode columnRexNode = Expressions.fromFieldAccess(</span><br><span class="line">           rowSignature,</span><br><span class="line">           project,</span><br><span class="line">           aggregateCall.getArgList().get(<span class="number">0</span>)</span><br><span class="line">   );</span><br><span class="line">   <span class="keyword">final</span> DruidExpression columnArg = Expressions.toDruidExpression(plannerContext, rowSignature, columnRexNode);</span><br><span class="line">   <span class="keyword">if</span> (columnArg == <span class="keyword">null</span>) &#123;</span><br><span class="line">     <span class="keyword">return</span> <span class="keyword">null</span>;</span><br><span class="line">   &#125;</span><br><span class="line">   <span class="keyword">final</span> String fieldName;</span><br><span class="line">   <span class="keyword">final</span> String expression;</span><br><span class="line">   <span class="comment">//获取函数第一个输入参数作为聚合维度</span></span><br><span class="line">   <span class="keyword">if</span> (columnArg.isDirectColumnAccess()) &#123;</span><br><span class="line">     fieldName = columnArg.getDirectColumn();</span><br><span class="line">     expression = <span class="keyword">null</span>;</span><br><span class="line">   &#125; <span class="keyword">else</span> &#123;</span><br><span class="line">     fieldName = <span class="keyword">null</span>;</span><br><span class="line">     expression = columnArg.getExpression();</span><br><span class="line">   &#125;</span><br><span class="line"></span><br><span class="line">   Integer maxCardinality = <span class="keyword">null</span>;</span><br><span class="line">   <span class="comment">//获取函数第二个输入参数作为优化参数</span></span><br><span class="line">   <span class="keyword">if</span> (aggregateCall.getArgList().size() &gt;= <span class="number">2</span>) &#123;</span><br><span class="line">     <span class="keyword">final</span> RexNode sketchSizeArg = Expressions.fromFieldAccess(</span><br><span class="line">             rowSignature,</span><br><span class="line">             project,</span><br><span class="line">             aggregateCall.getArgList().get(<span class="number">1</span>)</span><br><span class="line">     );</span><br><span class="line"></span><br><span class="line">     <span class="keyword">if</span> (!sketchSizeArg.isA(SqlKind.LITERAL)) &#123;</span><br><span class="line">       <span class="comment">// the second parameter must be a literal in order to plan.</span></span><br><span class="line">       <span class="keyword">return</span> <span class="keyword">null</span>;</span><br><span class="line">     &#125; <span class="keyword">else</span> &#123;</span><br><span class="line">       maxCardinality = ((Number) RexLiteral.value(sketchSizeArg)).intValue();  </span><br><span class="line">     &#125;</span><br><span class="line">     </span><br><span class="line">   &#125;</span><br><span class="line">   <span class="comment">//构造原生的聚合器</span></span><br><span class="line">   BitmapUniqueAggregatorFactory factory = <span class="keyword">new</span> BitmapUniqueAggregatorFactory(name, fieldName, expression, maxCardinality, plannerContext.getExprMacroTable());</span><br><span class="line">   <span class="keyword">return</span> Aggregation.create(factory);</span><br><span class="line">   </span><br><span class="line"> &#125;</span><br></pre></td></tr></table></figure>
+
+<ul>
+<li>在DruidOperatorTable中注册相应的类，代码如下：</li>
+</ul>
+<figure class="highlight java"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br></pre></td><td class="code"><pre><span class="line"> <span class="keyword">private</span> <span class="keyword">static</span> <span class="keyword">final</span> List&lt;SqlAggregator&gt; STANDARD_AGGREGATORS =</span><br><span class="line">      ImmutableList.&lt;SqlAggregator&gt;builder()</span><br><span class="line">          .add(<span class="keyword">new</span> ApproxCountDistinctSqlAggregator())</span><br><span class="line">          .add(<span class="keyword">new</span> AvgSqlAggregator())</span><br><span class="line">          .add(<span class="keyword">new</span> CountSqlAggregator())</span><br><span class="line">          .add(EarliestLatestAnySqlAggregator.EARLIEST)</span><br><span class="line">          .add(EarliestLatestAnySqlAggregator.LATEST)</span><br><span class="line"><span class="comment">//          .add(EarliestLatestAnySqlAggregator.ANY_VALUE)</span></span><br><span class="line">          .add(<span class="keyword">new</span> MinSqlAggregator())</span><br><span class="line">          .add(<span class="keyword">new</span> MaxSqlAggregator())</span><br><span class="line">          .add(<span class="keyword">new</span> SumSqlAggregator())</span><br><span class="line">          .add(<span class="keyword">new</span> SumZeroSqlAggregator())</span><br><span class="line">          .add(<span class="keyword">new</span> ThetaSketchApproxCountDistinctSqlAggregator())</span><br><span class="line">          .add(<span class="keyword">new</span> ThetaSketchObjectSqlAggregator())</span><br><span class="line">          .add(<span class="keyword">new</span> BitmapUniqueSqlAggregator())</span><br><span class="line">          .build();</span><br></pre></td></tr></table></figure>
+
+<h5 id="join处理"><a href="#join处理" class="headerlink" title="join处理"></a>join处理</h5><p>join的详细设计可以参考社区的proposal:</p>
+<p><a target="_blank" rel="noopener" href="https://gist.github.com/gianm/39548daef74f0373b3c87056e3db4627">https://gist.github.com/gianm/39548daef74f0373b3c87056e3db4627</a></p>
+<p>总体而言，druid由于使用的是scatter-gather查询模型，目前druid会把join转化为子查询。</p>
+<p>以 select * from A join B 为例，在druid中会转化为select * from A join (select * from B)。该查询的处理流程如下：</p>
+<p><img src="/2021/11/19/druid%E4%B8%ADsql%E6%A8%A1%E5%9D%97%E5%88%86%E6%9E%90/image-20220219230553212.png" alt="image-20220219230553212"></p>
+<h6 id="broker端流程"><a href="#broker端流程" class="headerlink" title="broker端流程"></a>broker端流程</h6><p>druid的join需要先经过broker节点，把维表的数据全部查询出来放置到内存中，转化为InlineDataSource,然后再广播到主表进行Join查询。因为需要用到druid的内存保存维表的数据，所以维表数据量不能太大，一般不建议超过10万。</p>
+<p>join在broker节点的时序图如下：</p>
+<p><img src="/2021/11/19/druid%E4%B8%ADsql%E6%A8%A1%E5%9D%97%E5%88%86%E6%9E%90/image-20220219230615548.png" alt="image-20220219230615548"></p>
+<p>​    关键逻辑是在ClientQuerySegmentWalker的inlineIfNecessary方法，该方法主要是进行维表的子查询并构建InlineDataSource,以便进行join过滤。</p>
+<h6 id="His端流程"><a href="#His端流程" class="headerlink" title="His端流程"></a>His端流程</h6><p>druid的join在historical节点主要是将broker端生成InlineDataSource转化为RowBasedIndexedTable，然后在HashJoinEngine构建JoinMatcher对主表进行过滤。</p>
+<p>基本原理是将RowBasedIndexedTable的内存数据根据Join条件构建IndexedTableJoinMatcher，根据matchCondition方法判定是否满足连接条件。判定方式是提前将维表数据转化为一个Map，然后利用主表的数据进行key过滤，得到维表的docId。</p>
+<p><img src="/2021/11/19/druid%E4%B8%ADsql%E6%A8%A1%E5%9D%97%E5%88%86%E6%9E%90/image-20220219230644478.png" alt="image-20220219230644478"></p>
+<p>时序图中以TimeseriesQuery查询作为例子，其他类型的查询差别不大。</p>
+
+      
+    </div>
+    <footer class="article-footer">
+      <a data-url="http://example.com/2021/11/19/druid%E4%B8%ADsql%E6%A8%A1%E5%9D%97%E5%88%86%E6%9E%90/" data-id="ckztz6e6b0001mi792ist3y18" data-title="druid中sql模块分析" class="article-share-link">Teilen</a>
+      
+      
+      
+  <ul class="article-tag-list" itemprop="keywords"><li class="article-tag-list-item"><a class="article-tag-list-link" href="/tags/druid/" rel="tag">druid</a></li></ul>
+
+    </footer>
+  </div>
+  
+    
+<nav id="article-nav">
+  
+    <a href="/2022/01/20/azkaban%E6%89%A7%E8%A1%8C%E6%B5%81%E7%A8%8B%E6%BA%90%E7%A0%81%E5%88%86%E6%9E%90/" id="article-nav-newer" class="article-nav-link-wrap">
+      <strong class="article-nav-caption">Neuer</strong>
+      <div class="article-nav-title">
+        
+          azkaban执行流程源码分析
+        
+      </div>
+    </a>
+  
+  
+    <a href="/2021/11/19/druid%E4%B8%AD%E5%8F%91%E5%B8%83%E5%8D%B8%E8%BD%BDsegment%E5%92%8C%E6%9C%8D%E5%8A%A1%E6%BA%90%E7%A0%81%E8%A7%A3%E6%9E%90/" id="article-nav-older" class="article-nav-link-wrap">
+      <strong class="article-nav-caption">Älter</strong>
+      <div class="article-nav-title">druid中发布卸载segment和服务源码解析</div>
+    </a>
+  
+</nav>
+
+  
+</article>
+
+
+</section>
+        
+          <aside id="sidebar">
+  
+    
+
+  
+    
+  <div class="widget-wrap">
+    <h3 class="widget-title">Tags</h3>
+    <div class="widget">
+      <ul class="tag-list" itemprop="keywords"><li class="tag-list-item"><a class="tag-list-link" href="/tags/ID-MAPPING/" rel="tag">ID-MAPPING</a></li><li class="tag-list-item"><a class="tag-list-link" href="/tags/azkaban/" rel="tag">azkaban</a></li><li class="tag-list-item"><a class="tag-list-link" href="/tags/druid/" rel="tag">druid</a></li><li class="tag-list-item"><a class="tag-list-link" href="/tags/flink/" rel="tag">flink</a></li></ul>
+    </div>
+  </div>
+
+
+  
+    
+  <div class="widget-wrap">
+    <h3 class="widget-title">Tag Cloud</h3>
+    <div class="widget tagcloud">
+      <a href="/tags/ID-MAPPING/" style="font-size: 10px;">ID-MAPPING</a> <a href="/tags/azkaban/" style="font-size: 10px;">azkaban</a> <a href="/tags/druid/" style="font-size: 20px;">druid</a> <a href="/tags/flink/" style="font-size: 15px;">flink</a>
+    </div>
+  </div>
+
+  
+    
+  <div class="widget-wrap">
+    <h3 class="widget-title">Archiv</h3>
+    <div class="widget">
+      <ul class="archive-list"><li class="archive-list-item"><a class="archive-list-link" href="/archives/2022/01/">January 2022</a></li><li class="archive-list-item"><a class="archive-list-link" href="/archives/2021/11/">November 2021</a></li><li class="archive-list-item"><a class="archive-list-link" href="/archives/2021/10/">October 2021</a></li><li class="archive-list-item"><a class="archive-list-link" href="/archives/2021/07/">July 2021</a></li></ul>
+    </div>
+  </div>
+
+
+  
+    
+  <div class="widget-wrap">
+    <h3 class="widget-title">letzter Beitrag</h3>
+    <div class="widget">
+      <ul>
+        
+          <li>
+            <a href="/2022/01/29/flink%E7%9A%84%E5%86%85%E5%AD%98%E7%AE%A1%E7%90%86%E6%9C%BA%E5%88%B6%E7%AE%80%E5%8D%95%E8%A7%A3%E6%9E%90/">Flink内存管理源码解读</a>
+          </li>
+        
+          <li>
+            <a href="/2022/01/20/azkaban%E6%89%A7%E8%A1%8C%E6%B5%81%E7%A8%8B%E6%BA%90%E7%A0%81%E5%88%86%E6%9E%90/">azkaban执行流程源码分析</a>
+          </li>
+        
+          <li>
+            <a href="/2021/11/19/druid%E4%B8%ADsql%E6%A8%A1%E5%9D%97%E5%88%86%E6%9E%90/">druid中sql模块分析</a>
+          </li>
+        
+          <li>
+            <a href="/2021/11/19/druid%E4%B8%AD%E5%8F%91%E5%B8%83%E5%8D%B8%E8%BD%BDsegment%E5%92%8C%E6%9C%8D%E5%8A%A1%E6%BA%90%E7%A0%81%E8%A7%A3%E6%9E%90/">druid中发布卸载segment和服务源码解析</a>
+          </li>
+        
+          <li>
+            <a href="/2021/11/19/druid%E4%B8%AD%E8%81%9A%E5%90%88%E5%87%BD%E6%95%B0%E5%AE%9E%E7%8E%B0%E6%BA%90%E7%A0%81%E8%A7%A3%E6%9E%90/">druid中聚合函数实现源码解析</a>
+          </li>
+        
+      </ul>
+    </div>
+  </div>
+
+  
+</aside>
+        
+      </div>
+      <footer id="footer">
+  
+  <div class="outer">
+    <div id="footer-info" class="inner">
+      
+      &copy; 2022 Lime<br>
+      Powered by <a href="https://hexo.io/" target="_blank">Hexo</a>
+    </div>
+  </div>
+</footer>
+
+    </div>
+    <nav id="mobile-nav">
+  
+    <a href="/" class="mobile-nav-link">Home</a>
+  
+    <a href="/archives" class="mobile-nav-link">Archives</a>
+  
+</nav>
+    
+
+
+<script src="/js/jquery-3.4.1.min.js"></script>
+
+
+
+  
+<script src="/fancybox/jquery.fancybox.min.js"></script>
+
+
+
+
+<script src="/js/script.js"></script>
+
+
+
+
+
+  </div>
+</body>
+</html>

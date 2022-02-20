@@ -1,0 +1,282 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  
+  
+  <title>druid中聚合函数实现源码解析 | Big Face Cat</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
+  <meta name="description" content="整体概述​    可以在摄取时提供聚合，作为摄取规范的一部分，作为在数据进入tindex之前汇总数据的一种方式。也可以在查询时将聚合指定为许多查询的一部分。 ​    tindex中包含多种aggregator，如下：  Count aggregator Sum aggregators Min &#x2F; Max aggregators First &#x2F; Last aggregator ANY aggreg">
+<meta property="og:type" content="article">
+<meta property="og:title" content="druid中聚合函数实现源码解析">
+<meta property="og:url" content="http://example.com/2021/11/19/druid%E4%B8%AD%E8%81%9A%E5%90%88%E5%87%BD%E6%95%B0%E5%AE%9E%E7%8E%B0%E6%BA%90%E7%A0%81%E8%A7%A3%E6%9E%90/index.html">
+<meta property="og:site_name" content="Big Face Cat">
+<meta property="og:description" content="整体概述​    可以在摄取时提供聚合，作为摄取规范的一部分，作为在数据进入tindex之前汇总数据的一种方式。也可以在查询时将聚合指定为许多查询的一部分。 ​    tindex中包含多种aggregator，如下：  Count aggregator Sum aggregators Min &#x2F; Max aggregators First &#x2F; Last aggregator ANY aggreg">
+<meta property="og:locale">
+<meta property="og:image" content="http://example.com/2021/11/19/druid%E4%B8%AD%E8%81%9A%E5%90%88%E5%87%BD%E6%95%B0%E5%AE%9E%E7%8E%B0%E6%BA%90%E7%A0%81%E8%A7%A3%E6%9E%90/image-20220219224447820.png">
+<meta property="og:image" content="http://example.com/2021/11/19/druid%E4%B8%AD%E8%81%9A%E5%90%88%E5%87%BD%E6%95%B0%E5%AE%9E%E7%8E%B0%E6%BA%90%E7%A0%81%E8%A7%A3%E6%9E%90/image-20220219224633538.png">
+<meta property="og:image" content="http://example.com/2021/11/19/druid%E4%B8%AD%E8%81%9A%E5%90%88%E5%87%BD%E6%95%B0%E5%AE%9E%E7%8E%B0%E6%BA%90%E7%A0%81%E8%A7%A3%E6%9E%90/image-20220219224640515.png">
+<meta property="og:image" content="http://example.com/2021/11/19/druid%E4%B8%AD%E8%81%9A%E5%90%88%E5%87%BD%E6%95%B0%E5%AE%9E%E7%8E%B0%E6%BA%90%E7%A0%81%E8%A7%A3%E6%9E%90/image-20220219224702041.png">
+<meta property="article:published_time" content="2021-11-19T14:43:47.000Z">
+<meta property="article:modified_time" content="2022-02-20T08:27:25.090Z">
+<meta property="article:author" content="Lime">
+<meta property="article:tag" content="druid">
+<meta name="twitter:card" content="summary">
+<meta name="twitter:image" content="http://example.com/2021/11/19/druid%E4%B8%AD%E8%81%9A%E5%90%88%E5%87%BD%E6%95%B0%E5%AE%9E%E7%8E%B0%E6%BA%90%E7%A0%81%E8%A7%A3%E6%9E%90/image-20220219224447820.png">
+  
+    <link rel="alternate" href="/atom.xml" title="Big Face Cat" type="application/atom+xml">
+  
+  
+    <link rel="shortcut icon" href="/favicon.png">
+  
+  
+    
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/typeface-source-code-pro@0.0.71/index.min.css">
+
+  
+  
+<link rel="stylesheet" href="/css/style.css">
+
+  
+    
+<link rel="stylesheet" href="/fancybox/jquery.fancybox.min.css">
+
+  
+<meta name="generator" content="Hexo 6.0.0"></head>
+
+<body>
+  <div id="container">
+    <div id="wrap">
+      <header id="header">
+  <div id="banner"></div>
+  <div id="header-outer" class="outer">
+    <div id="header-title" class="inner">
+      <h1 id="logo-wrap">
+        <a href="/" id="logo">Big Face Cat</a>
+      </h1>
+      
+    </div>
+    <div id="header-inner" class="inner">
+      <nav id="main-nav">
+        <a id="main-nav-toggle" class="nav-icon"></a>
+        
+          <a class="main-nav-link" href="/">Home</a>
+        
+          <a class="main-nav-link" href="/archives">Archives</a>
+        
+      </nav>
+      <nav id="sub-nav">
+        
+          <a id="nav-rss-link" class="nav-icon" href="/atom.xml" title="RSS Feed"></a>
+        
+        <a id="nav-search-btn" class="nav-icon" title="Suche"></a>
+      </nav>
+      <div id="search-form-wrap">
+        <form action="//google.com/search" method="get" accept-charset="UTF-8" class="search-form"><input type="search" name="q" class="search-form-input" placeholder="Suche"><button type="submit" class="search-form-submit">&#xF002;</button><input type="hidden" name="sitesearch" value="http://example.com"></form>
+      </div>
+    </div>
+  </div>
+</header>
+
+      <div class="outer">
+        <section id="main"><article id="post-druid中聚合函数实现源码解析" class="h-entry article article-type-post" itemprop="blogPost" itemscope itemtype="https://schema.org/BlogPosting">
+  <div class="article-meta">
+    <a href="/2021/11/19/druid%E4%B8%AD%E8%81%9A%E5%90%88%E5%87%BD%E6%95%B0%E5%AE%9E%E7%8E%B0%E6%BA%90%E7%A0%81%E8%A7%A3%E6%9E%90/" class="article-date">
+  <time class="dt-published" datetime="2021-11-19T14:43:47.000Z" itemprop="datePublished">2021-11-19</time>
+</a>
+    
+  </div>
+  <div class="article-inner">
+    
+    
+      <header class="article-header">
+        
+  
+    <h1 class="p-name article-title" itemprop="headline name">
+      druid中聚合函数实现源码解析
+    </h1>
+  
+
+      </header>
+    
+    <div class="e-content article-entry" itemprop="articleBody">
+      
+        <h4 id="整体概述"><a href="#整体概述" class="headerlink" title="整体概述"></a>整体概述</h4><p>​    可以在摄取时提供聚合，作为摄取规范的一部分，作为在数据进入tindex之前汇总数据的一种方式。也可以在查询时将聚合指定为许多查询的一部分。</p>
+<p>​    tindex中包含多种aggregator，如下：</p>
+<ul>
+<li>Count aggregator</li>
+<li>Sum aggregators</li>
+<li>Min / Max aggregators</li>
+<li>First / Last aggregator</li>
+<li>ANY aggregator</li>
+<li>JavaScript aggregator</li>
+<li>Approximate Aggregations</li>
+</ul>
+<p>下图列举了date 和long类型的两个minmax为例展示相关聚合函数的类继承关系</p>
+<p><img src="/2021/11/19/druid%E4%B8%AD%E8%81%9A%E5%90%88%E5%87%BD%E6%95%B0%E5%AE%9E%E7%8E%B0%E6%BA%90%E7%A0%81%E8%A7%A3%E6%9E%90/image-20220219224447820.png" alt="image-20220219224447820"></p>
+<p>在druid中聚合函数，都是继承于Aggregator，对应的聚合函数实现分为堆外和堆内两种，现在详细解释这两种实现的具体逻辑。</p>
+<p>其中这两种实现类都是由AggregatorFactory创建而来，每一个聚合函数有堆内和堆外两种实现，都是由AggregatorFactory创建而来</p>
+<p>​    其中factorizeBuffered和factorize分别是创建堆外操作的聚合器和堆内操作的聚合器。下面通过对DoubleSumAggregator进行一个解析来看看聚合函数的实现方式。</p>
+<p>重要方法如下：<br>deserialize: 将输入的数据反序列化成当前聚合函数可操作的对象类型，例如在此处就会将String类型转化为double<br>getType: 返回当前的聚合查询返回的类型，例如DoubleSum这种聚合查询类型将返回ValueType.DOUBLE<br>getFinalizedType：表示最终的返回类型，在某些复杂查询中有序列化和反序列化的过程，需要这个方法确定最终的返回结果是什么类型。<br>getMaxIntermediateSize: 这个方法用于需要保存的值所需要的缓存空间大小（用于堆外申请空间），比如在sumDouble中,整个流程是对输入的数值做累加，所以始终只需要一个64bit的空间来做数据存储，所以可以直接返回一个Double.BYTES<br>getComparator: 获取Comparator<br>finalizeComputation：在最终完成之后调用，最终数据的计算，用于某些需要序列化之后再计算的特殊聚合方式，详情可以参考复杂聚合查询。例如：SketchAggregator<br>getMergingFactory:获取聚合AggregatorFactory<br>getCombiningFactory：获取组合的AggregatorFactory，在doublesum中，先并行处理完之后要combine这些结果，逻辑是跟sum一样，所以在sumdouble中还是直接返回的DoubleSumAggregator<br>getCacheKey：获取缓存的key值，会作为缓存结果的key值。<br>接下来对几个aggregator进行一个解析：</p>
+<ul>
+<li>DoubleSumAggregator</li>
+</ul>
+<p><img src="/2021/11/19/druid%E4%B8%AD%E8%81%9A%E5%90%88%E5%87%BD%E6%95%B0%E5%AE%9E%E7%8E%B0%E6%BA%90%E7%A0%81%E8%A7%A3%E6%9E%90/image-20220219224633538.png" alt="image-20220219224633538"></p>
+<p>aggregate方法就是做当前聚合函数的聚合逻辑，例如在DoubleSumAggregator中aggregate就是对每一个值进行一个累加操作，代码如下：</p>
+<p><img src="/2021/11/19/druid%E4%B8%AD%E8%81%9A%E5%90%88%E5%87%BD%E6%95%B0%E5%AE%9E%E7%8E%B0%E6%BA%90%E7%A0%81%E8%A7%A3%E6%9E%90/image-20220219224640515.png" alt="image-20220219224640515"></p>
+<p>还有一些get方法是用于获取聚合完成之后获取结果，基本上在sum聚合过程中，就是递归调用aggregate进行一个值累加最终调用get方法获取累加值，比较简单。同理求max，min等的操作类似。</p>
+<ul>
+<li>DoubleSumBufferAggregator</li>
+</ul>
+<p>DoubleSumBufferAggregator聚合器是通过堆外的方式来对数据进行一个聚合，和DoubleSumAggregator的区别在于他将聚合中间结果存在了堆外。</p>
+<p><img src="/2021/11/19/druid%E4%B8%AD%E8%81%9A%E5%90%88%E5%87%BD%E6%95%B0%E5%AE%9E%E7%8E%B0%E6%BA%90%E7%A0%81%E8%A7%A3%E6%9E%90/image-20220219224702041.png" alt="image-20220219224702041"></p>
+<p>​    整体逻辑类似，将前一次的聚合结果取出，跟本条数据累加，在存放回之前的位置。</p>
+<p>​    通过对doubleSum的解析，基本的Aggregator的逻辑就差不多了，可类比doubleSum去看别的聚合器。同样的也可以根据上述的信息新增一个自定义的聚合器</p>
+
+      
+    </div>
+    <footer class="article-footer">
+      <a data-url="http://example.com/2021/11/19/druid%E4%B8%AD%E8%81%9A%E5%90%88%E5%87%BD%E6%95%B0%E5%AE%9E%E7%8E%B0%E6%BA%90%E7%A0%81%E8%A7%A3%E6%9E%90/" data-id="ckztz6e6b0003mi794klz8pe8" data-title="druid中聚合函数实现源码解析" class="article-share-link">Teilen</a>
+      
+      
+      
+  <ul class="article-tag-list" itemprop="keywords"><li class="article-tag-list-item"><a class="article-tag-list-link" href="/tags/druid/" rel="tag">druid</a></li></ul>
+
+    </footer>
+  </div>
+  
+    
+<nav id="article-nav">
+  
+    <a href="/2021/11/19/druid%E4%B8%AD%E5%8F%91%E5%B8%83%E5%8D%B8%E8%BD%BDsegment%E5%92%8C%E6%9C%8D%E5%8A%A1%E6%BA%90%E7%A0%81%E8%A7%A3%E6%9E%90/" id="article-nav-newer" class="article-nav-link-wrap">
+      <strong class="article-nav-caption">Neuer</strong>
+      <div class="article-nav-title">
+        
+          druid中发布卸载segment和服务源码解析
+        
+      </div>
+    </a>
+  
+  
+    <a href="/2021/11/19/druid%E4%B8%ADScanQuery%E6%9F%A5%E8%AF%A2%E8%A7%A3%E6%9E%90/" id="article-nav-older" class="article-nav-link-wrap">
+      <strong class="article-nav-caption">Älter</strong>
+      <div class="article-nav-title">druid中ScanQuery查询解析</div>
+    </a>
+  
+</nav>
+
+  
+</article>
+
+
+</section>
+        
+          <aside id="sidebar">
+  
+    
+
+  
+    
+  <div class="widget-wrap">
+    <h3 class="widget-title">Tags</h3>
+    <div class="widget">
+      <ul class="tag-list" itemprop="keywords"><li class="tag-list-item"><a class="tag-list-link" href="/tags/ID-MAPPING/" rel="tag">ID-MAPPING</a></li><li class="tag-list-item"><a class="tag-list-link" href="/tags/azkaban/" rel="tag">azkaban</a></li><li class="tag-list-item"><a class="tag-list-link" href="/tags/druid/" rel="tag">druid</a></li><li class="tag-list-item"><a class="tag-list-link" href="/tags/flink/" rel="tag">flink</a></li></ul>
+    </div>
+  </div>
+
+
+  
+    
+  <div class="widget-wrap">
+    <h3 class="widget-title">Tag Cloud</h3>
+    <div class="widget tagcloud">
+      <a href="/tags/ID-MAPPING/" style="font-size: 10px;">ID-MAPPING</a> <a href="/tags/azkaban/" style="font-size: 10px;">azkaban</a> <a href="/tags/druid/" style="font-size: 20px;">druid</a> <a href="/tags/flink/" style="font-size: 15px;">flink</a>
+    </div>
+  </div>
+
+  
+    
+  <div class="widget-wrap">
+    <h3 class="widget-title">Archiv</h3>
+    <div class="widget">
+      <ul class="archive-list"><li class="archive-list-item"><a class="archive-list-link" href="/archives/2022/01/">January 2022</a></li><li class="archive-list-item"><a class="archive-list-link" href="/archives/2021/11/">November 2021</a></li><li class="archive-list-item"><a class="archive-list-link" href="/archives/2021/10/">October 2021</a></li><li class="archive-list-item"><a class="archive-list-link" href="/archives/2021/07/">July 2021</a></li></ul>
+    </div>
+  </div>
+
+
+  
+    
+  <div class="widget-wrap">
+    <h3 class="widget-title">letzter Beitrag</h3>
+    <div class="widget">
+      <ul>
+        
+          <li>
+            <a href="/2022/01/29/flink%E7%9A%84%E5%86%85%E5%AD%98%E7%AE%A1%E7%90%86%E6%9C%BA%E5%88%B6%E7%AE%80%E5%8D%95%E8%A7%A3%E6%9E%90/">Flink内存管理源码解读</a>
+          </li>
+        
+          <li>
+            <a href="/2022/01/20/azkaban%E6%89%A7%E8%A1%8C%E6%B5%81%E7%A8%8B%E6%BA%90%E7%A0%81%E5%88%86%E6%9E%90/">azkaban执行流程源码分析</a>
+          </li>
+        
+          <li>
+            <a href="/2021/11/19/druid%E4%B8%ADsql%E6%A8%A1%E5%9D%97%E5%88%86%E6%9E%90/">druid中sql模块分析</a>
+          </li>
+        
+          <li>
+            <a href="/2021/11/19/druid%E4%B8%AD%E5%8F%91%E5%B8%83%E5%8D%B8%E8%BD%BDsegment%E5%92%8C%E6%9C%8D%E5%8A%A1%E6%BA%90%E7%A0%81%E8%A7%A3%E6%9E%90/">druid中发布卸载segment和服务源码解析</a>
+          </li>
+        
+          <li>
+            <a href="/2021/11/19/druid%E4%B8%AD%E8%81%9A%E5%90%88%E5%87%BD%E6%95%B0%E5%AE%9E%E7%8E%B0%E6%BA%90%E7%A0%81%E8%A7%A3%E6%9E%90/">druid中聚合函数实现源码解析</a>
+          </li>
+        
+      </ul>
+    </div>
+  </div>
+
+  
+</aside>
+        
+      </div>
+      <footer id="footer">
+  
+  <div class="outer">
+    <div id="footer-info" class="inner">
+      
+      &copy; 2022 Lime<br>
+      Powered by <a href="https://hexo.io/" target="_blank">Hexo</a>
+    </div>
+  </div>
+</footer>
+
+    </div>
+    <nav id="mobile-nav">
+  
+    <a href="/" class="mobile-nav-link">Home</a>
+  
+    <a href="/archives" class="mobile-nav-link">Archives</a>
+  
+</nav>
+    
+
+
+<script src="/js/jquery-3.4.1.min.js"></script>
+
+
+
+  
+<script src="/fancybox/jquery.fancybox.min.js"></script>
+
+
+
+
+<script src="/js/script.js"></script>
+
+
+
+
+
+  </div>
+</body>
+</html>

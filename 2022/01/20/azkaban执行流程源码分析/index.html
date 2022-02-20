@@ -1,0 +1,377 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  
+  
+  <title>azkaban执行流程源码分析 | Big Face Cat</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
+  <meta name="description" content="导读 ​    Azkaban是由Linkedin公司推出的一个批量工作流任务调度器，用于在一个工作流内以一个特定的顺序运行一组工作和流程。Azkaban使用job配置文件建立任务之间的依赖关系，并提供一个易于使用的web用户界面维护和跟踪你的工作流。 ​    本文将对azkaban的任务执行调度流程源码进行分析解读，主要分析后端的入口以及流程。 【检查工作流组执行】执行工作流和工作流组使用的是">
+<meta property="og:type" content="article">
+<meta property="og:title" content="azkaban执行流程源码分析">
+<meta property="og:url" content="http://example.com/2022/01/20/azkaban%E6%89%A7%E8%A1%8C%E6%B5%81%E7%A8%8B%E6%BA%90%E7%A0%81%E5%88%86%E6%9E%90/index.html">
+<meta property="og:site_name" content="Big Face Cat">
+<meta property="og:description" content="导读 ​    Azkaban是由Linkedin公司推出的一个批量工作流任务调度器，用于在一个工作流内以一个特定的顺序运行一组工作和流程。Azkaban使用job配置文件建立任务之间的依赖关系，并提供一个易于使用的web用户界面维护和跟踪你的工作流。 ​    本文将对azkaban的任务执行调度流程源码进行分析解读，主要分析后端的入口以及流程。 【检查工作流组执行】执行工作流和工作流组使用的是">
+<meta property="og:locale">
+<meta property="og:image" content="http://example.com/2022/01/20/azkaban%E6%89%A7%E8%A1%8C%E6%B5%81%E7%A8%8B%E6%BA%90%E7%A0%81%E5%88%86%E6%9E%90/image-20220220152122148.png">
+<meta property="og:image" content="http://example.com/2022/01/20/azkaban%E6%89%A7%E8%A1%8C%E6%B5%81%E7%A8%8B%E6%BA%90%E7%A0%81%E5%88%86%E6%9E%90/image-20220220152300398.png">
+<meta property="og:image" content="http://example.com/2022/01/20/azkaban%E6%89%A7%E8%A1%8C%E6%B5%81%E7%A8%8B%E6%BA%90%E7%A0%81%E5%88%86%E6%9E%90/image-20220220152313042.png">
+<meta property="og:image" content="http://example.com/2022/01/20/azkaban%E6%89%A7%E8%A1%8C%E6%B5%81%E7%A8%8B%E6%BA%90%E7%A0%81%E5%88%86%E6%9E%90/image-20220220152325216.png">
+<meta property="og:image" content="http://example.com/2022/01/20/azkaban%E6%89%A7%E8%A1%8C%E6%B5%81%E7%A8%8B%E6%BA%90%E7%A0%81%E5%88%86%E6%9E%90/image-20220220152334887.png">
+<meta property="og:image" content="http://example.com/2022/01/20/azkaban%E6%89%A7%E8%A1%8C%E6%B5%81%E7%A8%8B%E6%BA%90%E7%A0%81%E5%88%86%E6%9E%90/image-20220220152344672.png">
+<meta property="og:image" content="http://example.com/2022/01/20/azkaban%E6%89%A7%E8%A1%8C%E6%B5%81%E7%A8%8B%E6%BA%90%E7%A0%81%E5%88%86%E6%9E%90/image-20220220152354593.png">
+<meta property="og:image" content="http://example.com/2022/01/20/azkaban%E6%89%A7%E8%A1%8C%E6%B5%81%E7%A8%8B%E6%BA%90%E7%A0%81%E5%88%86%E6%9E%90/image-20220220152405194.png">
+<meta property="og:image" content="http://example.com/2022/01/20/azkaban%E6%89%A7%E8%A1%8C%E6%B5%81%E7%A8%8B%E6%BA%90%E7%A0%81%E5%88%86%E6%9E%90/image-20220220152430231.png">
+<meta property="og:image" content="http://example.com/2022/01/20/azkaban%E6%89%A7%E8%A1%8C%E6%B5%81%E7%A8%8B%E6%BA%90%E7%A0%81%E5%88%86%E6%9E%90/image-20220220152451674.png">
+<meta property="og:image" content="http://example.com/2022/01/20/azkaban%E6%89%A7%E8%A1%8C%E6%B5%81%E7%A8%8B%E6%BA%90%E7%A0%81%E5%88%86%E6%9E%90/image-20220220152505403.png">
+<meta property="og:image" content="http://example.com/2022/01/20/azkaban%E6%89%A7%E8%A1%8C%E6%B5%81%E7%A8%8B%E6%BA%90%E7%A0%81%E5%88%86%E6%9E%90/image-20220220152516420.png">
+<meta property="og:image" content="http://example.com/2022/01/20/azkaban%E6%89%A7%E8%A1%8C%E6%B5%81%E7%A8%8B%E6%BA%90%E7%A0%81%E5%88%86%E6%9E%90/image-20220220152527208.png">
+<meta property="og:image" content="http://example.com/2022/01/20/azkaban%E6%89%A7%E8%A1%8C%E6%B5%81%E7%A8%8B%E6%BA%90%E7%A0%81%E5%88%86%E6%9E%90/image-20220220152537118.png">
+<meta property="og:image" content="http://example.com/2022/01/20/azkaban%E6%89%A7%E8%A1%8C%E6%B5%81%E7%A8%8B%E6%BA%90%E7%A0%81%E5%88%86%E6%9E%90/image-20220220152555354.png">
+<meta property="og:image" content="http://example.com/2022/01/20/azkaban%E6%89%A7%E8%A1%8C%E6%B5%81%E7%A8%8B%E6%BA%90%E7%A0%81%E5%88%86%E6%9E%90/image-20220220152625653.png">
+<meta property="og:image" content="http://example.com/2022/01/20/azkaban%E6%89%A7%E8%A1%8C%E6%B5%81%E7%A8%8B%E6%BA%90%E7%A0%81%E5%88%86%E6%9E%90/image-20220220152637894.png">
+<meta property="og:image" content="http://example.com/2022/01/20/azkaban%E6%89%A7%E8%A1%8C%E6%B5%81%E7%A8%8B%E6%BA%90%E7%A0%81%E5%88%86%E6%9E%90/image-20220220152700207.png">
+<meta property="og:image" content="http://example.com/2022/01/20/azkaban%E6%89%A7%E8%A1%8C%E6%B5%81%E7%A8%8B%E6%BA%90%E7%A0%81%E5%88%86%E6%9E%90/image-20220220152712974.png">
+<meta property="og:image" content="http://example.com/2022/01/20/azkaban%E6%89%A7%E8%A1%8C%E6%B5%81%E7%A8%8B%E6%BA%90%E7%A0%81%E5%88%86%E6%9E%90/image-20220220152725348.png">
+<meta property="og:image" content="http://example.com/2022/01/20/azkaban%E6%89%A7%E8%A1%8C%E6%B5%81%E7%A8%8B%E6%BA%90%E7%A0%81%E5%88%86%E6%9E%90/image-20220220152737047.png">
+<meta property="og:image" content="http://example.com/2022/01/20/azkaban%E6%89%A7%E8%A1%8C%E6%B5%81%E7%A8%8B%E6%BA%90%E7%A0%81%E5%88%86%E6%9E%90/image-20220220152751144.png">
+<meta property="og:image" content="http://example.com/2022/01/20/azkaban%E6%89%A7%E8%A1%8C%E6%B5%81%E7%A8%8B%E6%BA%90%E7%A0%81%E5%88%86%E6%9E%90/image-20220220152801742.png">
+<meta property="og:image" content="http://example.com/2022/01/20/azkaban%E6%89%A7%E8%A1%8C%E6%B5%81%E7%A8%8B%E6%BA%90%E7%A0%81%E5%88%86%E6%9E%90/image-20220220152810584.png">
+<meta property="og:image" content="http://example.com/2022/01/20/azkaban%E6%89%A7%E8%A1%8C%E6%B5%81%E7%A8%8B%E6%BA%90%E7%A0%81%E5%88%86%E6%9E%90/image-20220220152829346.png">
+<meta property="og:image" content="http://example.com/2022/01/20/azkaban%E6%89%A7%E8%A1%8C%E6%B5%81%E7%A8%8B%E6%BA%90%E7%A0%81%E5%88%86%E6%9E%90/image-20220220152842165.png">
+<meta property="og:image" content="http://example.com/2022/01/20/azkaban%E6%89%A7%E8%A1%8C%E6%B5%81%E7%A8%8B%E6%BA%90%E7%A0%81%E5%88%86%E6%9E%90/image-20220220152857374.png">
+<meta property="og:image" content="http://example.com/2022/01/20/azkaban%E6%89%A7%E8%A1%8C%E6%B5%81%E7%A8%8B%E6%BA%90%E7%A0%81%E5%88%86%E6%9E%90/image-20220220152911401.png">
+<meta property="og:image" content="http://example.com/2022/01/20/azkaban%E6%89%A7%E8%A1%8C%E6%B5%81%E7%A8%8B%E6%BA%90%E7%A0%81%E5%88%86%E6%9E%90/image-20220220152934840.png">
+<meta property="og:image" content="http://example.com/2022/01/20/azkaban%E6%89%A7%E8%A1%8C%E6%B5%81%E7%A8%8B%E6%BA%90%E7%A0%81%E5%88%86%E6%9E%90/image-20220220153023654.png">
+<meta property="og:image" content="http://example.com/2022/01/20/azkaban%E6%89%A7%E8%A1%8C%E6%B5%81%E7%A8%8B%E6%BA%90%E7%A0%81%E5%88%86%E6%9E%90/image-20220220153048641.png">
+<meta property="og:image" content="http://example.com/2022/01/20/azkaban%E6%89%A7%E8%A1%8C%E6%B5%81%E7%A8%8B%E6%BA%90%E7%A0%81%E5%88%86%E6%9E%90/image-20220220153111842.png">
+<meta property="og:image" content="http://example.com/2022/01/20/azkaban%E6%89%A7%E8%A1%8C%E6%B5%81%E7%A8%8B%E6%BA%90%E7%A0%81%E5%88%86%E6%9E%90/image-20220220153117199.png">
+<meta property="article:published_time" content="2022-01-20T07:33:23.000Z">
+<meta property="article:modified_time" content="2022-02-20T08:27:06.917Z">
+<meta property="article:author" content="Lime">
+<meta property="article:tag" content="azkaban">
+<meta name="twitter:card" content="summary">
+<meta name="twitter:image" content="http://example.com/2022/01/20/azkaban%E6%89%A7%E8%A1%8C%E6%B5%81%E7%A8%8B%E6%BA%90%E7%A0%81%E5%88%86%E6%9E%90/image-20220220152122148.png">
+  
+    <link rel="alternate" href="/atom.xml" title="Big Face Cat" type="application/atom+xml">
+  
+  
+    <link rel="shortcut icon" href="/favicon.png">
+  
+  
+    
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/typeface-source-code-pro@0.0.71/index.min.css">
+
+  
+  
+<link rel="stylesheet" href="/css/style.css">
+
+  
+    
+<link rel="stylesheet" href="/fancybox/jquery.fancybox.min.css">
+
+  
+<meta name="generator" content="Hexo 6.0.0"></head>
+
+<body>
+  <div id="container">
+    <div id="wrap">
+      <header id="header">
+  <div id="banner"></div>
+  <div id="header-outer" class="outer">
+    <div id="header-title" class="inner">
+      <h1 id="logo-wrap">
+        <a href="/" id="logo">Big Face Cat</a>
+      </h1>
+      
+    </div>
+    <div id="header-inner" class="inner">
+      <nav id="main-nav">
+        <a id="main-nav-toggle" class="nav-icon"></a>
+        
+          <a class="main-nav-link" href="/">Home</a>
+        
+          <a class="main-nav-link" href="/archives">Archives</a>
+        
+      </nav>
+      <nav id="sub-nav">
+        
+          <a id="nav-rss-link" class="nav-icon" href="/atom.xml" title="RSS Feed"></a>
+        
+        <a id="nav-search-btn" class="nav-icon" title="Suche"></a>
+      </nav>
+      <div id="search-form-wrap">
+        <form action="//google.com/search" method="get" accept-charset="UTF-8" class="search-form"><input type="search" name="q" class="search-form-input" placeholder="Suche"><button type="submit" class="search-form-submit">&#xF002;</button><input type="hidden" name="sitesearch" value="http://example.com"></form>
+      </div>
+    </div>
+  </div>
+</header>
+
+      <div class="outer">
+        <section id="main"><article id="post-azkaban执行流程源码分析" class="h-entry article article-type-post" itemprop="blogPost" itemscope itemtype="https://schema.org/BlogPosting">
+  <div class="article-meta">
+    <a href="/2022/01/20/azkaban%E6%89%A7%E8%A1%8C%E6%B5%81%E7%A8%8B%E6%BA%90%E7%A0%81%E5%88%86%E6%9E%90/" class="article-date">
+  <time class="dt-published" datetime="2022-01-20T07:33:23.000Z" itemprop="datePublished">2022-01-20</time>
+</a>
+    
+  </div>
+  <div class="article-inner">
+    
+    
+      <header class="article-header">
+        
+  
+    <h1 class="p-name article-title" itemprop="headline name">
+      azkaban执行流程源码分析
+    </h1>
+  
+
+      </header>
+    
+    <div class="e-content article-entry" itemprop="articleBody">
+      
+        <h3 id="导读"><a href="#导读" class="headerlink" title="导读"></a>导读</h3><p><img src="/2022/01/20/azkaban%E6%89%A7%E8%A1%8C%E6%B5%81%E7%A8%8B%E6%BA%90%E7%A0%81%E5%88%86%E6%9E%90/image-20220220152122148.png" alt="image-20220220152122148"></p>
+<p>​    Azkaban是由Linkedin公司推出的一个批量工作流任务调度器，用于在一个工作流内以一个特定的顺序运行一组工作和流程。Azkaban使用job配置文件建立任务之间的依赖关系，并提供一个易于使用的web用户界面维护和跟踪你的工作流。</p>
+<p>​    本文将对azkaban的任务执行调度流程源码进行分析解读，主要分析后端的入口以及流程。</p>
+<p>【检查工作流组执行】<br>执行工作流和工作流组使用的是同一套执行代码，在执行流程里会根据类型是工作流或者工作流组进行一些特殊的逻辑处理，首先会调用checkFlowGroup方法检查工作流组里的工作流是否正在执行，如果存在正在执行的工作流，那么在执行工作流组的时候会报错提示存在工作流正在执行。</p>
+<p>【解析执行参数及元数据信息】<br>执行工作流/工作流组时会传入一些执行参数信息，处理流程如下。<br>1)调用HttpRequestUtils的parseFlowOptions方法解析工作流执行参数，包括失败执行策略，成功/失败告警邮箱信息，跳过执行节点信息。<br>2)调用HttpRequestUtils的filterAdminOnlyFlowParams方法过滤掉一些不是管理员账号使用的参数，如工作流的优先级，使用的执行器，执行器列表。<br>3)如果存在指定执行器执行参数（idealExecutors），将该参数赋值给参数useExecutorList，后面提交工作流执行逻辑中会使用到。</p>
+<p>【提交工作流执行】<br>调用submitExecutableFlow方法进入提交工作流执行流程。</p>
+<p><img src="/2022/01/20/azkaban%E6%89%A7%E8%A1%8C%E6%B5%81%E7%A8%8B%E6%BA%90%E7%A0%81%E5%88%86%E6%9E%90/image-20220220152300398.png" alt="image-20220220152300398"></p>
+<p>1)首先调用    isMultiExecutorMode方法判断是否开启多执行器模式并且指定了执行器执行。</p>
+<p><img src="/2022/01/20/azkaban%E6%89%A7%E8%A1%8C%E6%B5%81%E7%A8%8B%E6%BA%90%E7%A0%81%E5%88%86%E6%9E%90/image-20220220152313042.png" alt="image-20220220152313042"></p>
+<p>2)如果满足了第1)步的条件，会维护一个执行队列，先调用FlowUtils的createExecutableFlow方法构造出可执行工作流对象，然后使用uploadExecutableFlow方法将工作流执行信息写入到数据库中，使用addActiveExecutableReference方法将正在执行工作流记录写入到数据库中，最终调用enqueue方法将工作流执行对象添加到工作流执行队列queuedFlows中。<br>3)第2)步将工作流添加到队列中，那么队列中的工作流是如何执行的？<br>这里需要查看ExecutorManager的构造方法，里面有个逻辑是判断当前是否为多执行器模式，如果是就初始化多执行器模式。</p>
+<p><img src="/2022/01/20/azkaban%E6%89%A7%E8%A1%8C%E6%B5%81%E7%A8%8B%E6%BA%90%E7%A0%81%E5%88%86%E6%9E%90/image-20220220152325216.png" alt="image-20220220152325216">然后在setupMultiExecutorMode方法中初始化并启动队列执行线程QueueProcessorThread。</p>
+<p><img src="/2022/01/20/azkaban%E6%89%A7%E8%A1%8C%E6%B5%81%E7%A8%8B%E6%BA%90%E7%A0%81%E5%88%86%E6%9E%90/image-20220220152334887.png" alt="image-20220220152334887">接着看队列执行线程QueueProcessorThread的run方法，主要逻辑在processQueuedFlows方法中，首先判断线程状态是否active并且能从工作流执行队列中获取到对象，如果满足则继续进行流程。</p>
+<p><img src="/2022/01/20/azkaban%E6%89%A7%E8%A1%8C%E6%B5%81%E7%A8%8B%E6%BA%90%E7%A0%81%E5%88%86%E6%9E%90/image-20220220152344672.png" alt="image-20220220152344672"></p>
+<p>这里会有一个判断，如果当前时间距离上次刷新执行器时间 &gt; 统计可用executor个数的时间间隔，或者当前统计工作流执行个数 &gt;= 统计当前阻塞的任务个数时调用refreshExecutors方法刷新执行器信息。</p>
+<p><img src="/2022/01/20/azkaban%E6%89%A7%E8%A1%8C%E6%B5%81%E7%A8%8B%E6%BA%90%E7%A0%81%E5%88%86%E6%9E%90/image-20220220152354593.png" alt="image-20220220152354593">刷新执行器信息的流程：针对可使用状态的执行器activeExecutors，使用ApiGateway向对应的执行器发送请求获取执行器的信息，根据获取的执行器信息更新原来的执行器信息，如果获取执行器的信息失败了，将会更新这些执行器的可用状态为false。</p>
+<p>接着获取工作流的更新时间，如果更新时间 &gt; 执行器最后一次更新时间，说明还需要等待执行器刷新，这时先把工作流执行对象放回队列中，然后进行休眠。如果更新时间 &lt;＝ 执行器最后一次更新时间，这时继续进行流程，调用setupExecutors方法初始化执行器。</p>
+<p><img src="/2022/01/20/azkaban%E6%89%A7%E8%A1%8C%E6%B5%81%E7%A8%8B%E6%BA%90%E7%A0%81%E5%88%86%E6%9E%90/image-20220220152405194.png" alt="image-20220220152405194">初始化执行器的流程：判断当前是否为多执行器模式，如果是直接从数据库中获取所有的执行器，如果不是则从配置中获取执行器的host和端口号，然后判断数据库中是否已经存在该执行器，如果没有的话就将该执行器添加到数据库中并置为可用状态。<br>继续进行流程，调用selectExecutorAndDispatchFlow方法使用当前选择的执行器执行工作流，主要调用dispatch方法通过ApiGateway向azkaban-exec发送执行工作流请求，完成工作流执行的提交。需要注意的是如果是多执行器的模式，这里会有一个选择执行器的过程，主要逻辑在selectExecutor方法中。<br>selectExecutor流程：</p>
+<ol>
+<li>首先调用getUserSpecifiedExecutor方法检查执行参数是否指定了执行器，如果指定了执行器就使用该执行器提交执行。</li>
+</ol>
+<p><img src="/2022/01/20/azkaban%E6%89%A7%E8%A1%8C%E6%B5%81%E7%A8%8B%E6%BA%90%E7%A0%81%E5%88%86%E6%9E%90/image-20220220152430231.png" alt="image-20220220152430231"></p>
+<ol start="2">
+<li>如果使用默认执行器，会先根据执行器列表和执行器选择权重初始化执行器选择器ExecutorSelector，调用selector的getBest方法获取最优执行器，流程如下：</li>
+</ol>
+<p>​    首先通过定义的CandidateFilter进行预筛选。</p>
+<p><img src="/2022/01/20/azkaban%E6%89%A7%E8%A1%8C%E6%B5%81%E7%A8%8B%E6%BA%90%E7%A0%81%E5%88%86%E6%9E%90/image-20220220152451674.png" alt="image-20220220152451674"></p>
+<p>​    上面的CandidateFilter是抽象类，这里具体的实现类为ExecutorFilter，里面有3种过滤的比较的指标。</p>
+<p><img src="/2022/01/20/azkaban%E6%89%A7%E8%A1%8C%E6%B5%81%E7%A8%8B%E6%BA%90%E7%A0%81%E5%88%86%E6%9E%90/image-20220220152505403.png" alt="image-20220220152505403"></p>
+<p>然后会根据上面定义的3种指标对执行器进行一个预过滤，如果满足要求会进行比较，然后放到执行器的候选集中。</p>
+<p>接下来的话会进行比较排序，然后选择最合适的execserver。</p>
+<p><img src="/2022/01/20/azkaban%E6%89%A7%E8%A1%8C%E6%B5%81%E7%A8%8B%E6%BA%90%E7%A0%81%E5%88%86%E6%9E%90/image-20220220152516420.png" alt="image-20220220152516420"></p>
+<p>里面关键的是this.comparator，它是一个抽象类CandidateCompartor，里面用到的实现类为ExecutorCompartor，主要是对execserver的一些指标进行综合比较，筛选出最终的execserver，目前有如下4种比较器。</p>
+<p><img src="/2022/01/20/azkaban%E6%89%A7%E8%A1%8C%E6%B5%81%E7%A8%8B%E6%BA%90%E7%A0%81%E5%88%86%E6%9E%90/image-20220220152527208.png" alt="image-20220220152527208"></p>
+<p>对比的有如下4个指标：</p>
+<p>剩余运行工作流的剩余容量越大，优先级越高。</p>
+<p>剩余内存容量越大，优先级越高。</p>
+<p>最近分配工作流的时间越大，优先级越高。</p>
+<p>CPU使用量越小，优先级越高。</p>
+<p>最终使用FactorCompartor进行比较，通过加权得到一个得分值，根据得分值选择execserver。</p>
+<p><img src="/2022/01/20/azkaban%E6%89%A7%E8%A1%8C%E6%B5%81%E7%A8%8B%E6%BA%90%E7%A0%81%E5%88%86%E6%9E%90/image-20220220152537118.png" alt="image-20220220152537118"></p>
+<p>4)如果不满足1)的条件，则会使用默认的执行器执行，会调用submitExecutableFlow方法提交之前工作流，具体的逻辑和上述差不多，最终都是通过调用dispatch方法通过ApiGateway向azkaban-exec发送执行工作流请求。还需要注意的是，如果提交执行请求异常了，会调用finalizeFlows方法检查并更新工作流最终状态。<br>finalizeFlows方法流程：调用fetchExecutableFlow方法查询工作流执行信息，如果工作流执行失败了将整个工作流的执行信息都设置为失败并更新到数据库。然后调用告警工具类AlertUtil的buildOriginalStrategyFromFlow方法根据工作流告警参数构造工作流的告警策略。调用告警工具类AlertUtil的convertToStrategies方法将告警策略反序列化为告警策略对象。如果遍历存在告警策略对象，调用apply方法应用告警，应用先调用initialize方法初始化告警条件参数，然后调用check方法检查是否满足告警触发条件，调用buildAlertParams方法构造告警参数并返回(主要涉及告警模板中的参数信息)，如果满足了告警触发条件，调用告警工具类AlertUtil的alertBatchSenders方法发送告警，最后调用update方法更新告警参数(主要是超时告警检查间隔时间的更新)。</p>
+<p>【处理webserver发送到execserver的请求】</p>
+<p>azkaban-web-server通过ExecutorApiGateway发送执行请求到azkaban-exec-server的ExecutorServlet，然后根据请求的action类型决定调用的逻辑。</p>
+<p><img src="/2022/01/20/azkaban%E6%89%A7%E8%A1%8C%E6%B5%81%E7%A8%8B%E6%BA%90%E7%A0%81%E5%88%86%E6%9E%90/image-20220220152555354.png" alt="image-20220220152555354"></p>
+<ol>
+<li>执行工作流请求主要会调用到handleAjaxExecute方法。</li>
+<li>调用submitFlow方法提交工作流任务，首先根据执行记录id调用fetchExecutableFlow从数据库中读取工作流执行信息。</li>
+<li>调用FlowPreparer的setup方法创建初始化工作流执行，调用setupProject方法初始化工作流相关文件(获取并解压)，调用createExecDir方法创建工作流执行记录目录，调用deepCopyFilesFromDirectory方法底层调用createDeepCopyFile合并创建最终的工作流执行目录文件，然后调用cleanup方法把临时的工作流执行记录目录删除。</li>
+<li>调用addListener方法将工作流执行对象添加到监听列表中，最后将工作流执行对象提交到线程池中执行，异步计算执行结果。</li>
+</ol>
+<p>所以最后执行工作流任务的流程在FlowRunner的run方法。<br>【初始化工作流执行】<br>1)首先根据配置的flow.num.job.threads参数大小来创建固定大小的线程池。</p>
+<p><img src="/2022/01/20/azkaban%E6%89%A7%E8%A1%8C%E6%B5%81%E7%A8%8B%E6%BA%90%E7%A0%81%E5%88%86%E6%9E%90/image-20220220152625653.png" alt="image-20220220152625653"></p>
+<p>2)然后调用setupFlowExecution方法初始化工作流执行配置参数。<br>这里会有一段逻辑判断来设置工作流依赖配置，在if里面判断是否为azkaban flow 2.0版本，这是azkaban原生的概念，会从yaml文件中加载相关配置信息，在这里可以忽略这段逻辑，因为数据开发中心使用的都是azkaban flow 1.0的。</p>
+<p><img src="/2022/01/20/azkaban%E6%89%A7%E8%A1%8C%E6%B5%81%E7%A8%8B%E6%BA%90%E7%A0%81%E5%88%86%E6%9E%90/image-20220220152637894.png" alt="image-20220220152637894"></p>
+<p>3)然后将获取的工作流配置信息设置进去，初始化工作流执行线程信息。<br>4)接着调用updateFlow方法更新数据库里的工作流信息，包括更新时间和工作流配置信息。</p>
+<p>【工作流执行详细流程】<br>工作流的执行逻辑在runFlow方法里。<br>1)首先在runReadyJob里调用getImpliedStatus方法判断当前工作流应该设置为何种状态。<br>getImpliedStatus的判断逻辑如下：<br> 如果当前工作流处于正在执行或者执行成功的状态，说明该工作流节点不需要再走执行的逻辑了，直接返回退出。</p>
+<p><img src="/2022/01/20/azkaban%E6%89%A7%E8%A1%8C%E6%B5%81%E7%A8%8B%E6%BA%90%E7%A0%81%E5%88%86%E6%9E%90/image-20220220152700207.png" alt="image-20220220152700207"></p>
+<p>如果当前工作流有上游节点，那么需要根据上游节点的执行状态来决定当前节点能否继续进行。如果上游节点的状态为非完成，说明当前工作流还不能切换为准备就绪的状态，先退出。如果上游节点的状态为失败，已取消或者已终止，那么需要将当前工作流标记为需要终止。</p>
+<p><img src="/2022/01/20/azkaban%E6%89%A7%E8%A1%8C%E6%B5%81%E7%A8%8B%E6%BA%90%E7%A0%81%E5%88%86%E6%9E%90/image-20220220152712974.png" alt="image-20220220152712974"></p>
+<p>如果当前工作流节点的状态为禁用或者跳过，返回状态为跳过。</p>
+<p><img src="/2022/01/20/azkaban%E6%89%A7%E8%A1%8C%E6%B5%81%E7%A8%8B%E6%BA%90%E7%A0%81%E5%88%86%E6%9E%90/image-20220220152725348.png" alt="image-20220220152725348"></p>
+<p>如果工作流失败了并且失败策略为完成当前作业节点，返回已取消的状态。如果工作流需要终止，返回已取消的状态。</p>
+<p><img src="/2022/01/20/azkaban%E6%89%A7%E8%A1%8C%E6%B5%81%E7%A8%8B%E6%BA%90%E7%A0%81%E5%88%86%E6%9E%90/image-20220220152737047.png" alt="image-20220220152737047"></p>
+<p>如果上述条件都不满足，说明该工作流可以正常准备就绪，返回准备的状态。<br>2)根据上面返回的状态，分别处理已取消，跳过，准备的逻辑。如果当前工作流的状态为准备就绪，设置工作流的执行状态为执行中，调用prepareJobProperties方法初始化工作流配置参数，初始化流程如下。<br>首先从工作流全局参数中获取配置信息。</p>
+<p><img src="/2022/01/20/azkaban%E6%89%A7%E8%A1%8C%E6%B5%81%E7%A8%8B%E6%BA%90%E7%A0%81%E5%88%86%E6%9E%90/image-20220220152751144.png" alt="image-20220220152751144"></p>
+<p>从依赖的父级中获取配置信息，比如节点任务会获取工作流的配置。</p>
+<p><img src="/2022/01/20/azkaban%E6%89%A7%E8%A1%8C%E6%B5%81%E7%A8%8B%E6%BA%90%E7%A0%81%E5%88%86%E6%9E%90/image-20220220152801742.png" alt="image-20220220152801742"></p>
+<p>从上一个节点中获取配置。</p>
+<p><img src="/2022/01/20/azkaban%E6%89%A7%E8%A1%8C%E6%B5%81%E7%A8%8B%E6%BA%90%E7%A0%81%E5%88%86%E6%9E%90/image-20220220152810584.png" alt="image-20220220152810584"></p>
+<p>接着调用FileIOUtils的parseLineParameters方法解析参数表达式，同样调用FileIOUtils的parseScriptFileParameters方法解析脚本内容的参数表达式。具体支持了哪些参数表达式，可以自行查看FileIOUtils里的相关方法实现，如果想要扩展参数表达式，也可以在里面进行开发。<br>3)然后检查工作流里第一个节点的执行状态，如果是准备就绪的状态，就调用runExecutableNode方法执行节点任务。<br>runExecutableNode的主要流程如下：<br>    首先调用prepareJobProperties方法初始化节点任务的配置。<br>    调用createJobRunner方法创建任务执行JobRunner对象，这里有个处理逻辑需要注意，如果当前节点的下游是“条件节点”，那么要给当前节点设置一个配置job.succeed.on.failure=true，表示当前节点就算执行失败了也会继续执行下去。添加这个逻辑的主要原因是条件节点的特殊性，因为条件节点是根据上游的执行状态来决定下游选择哪个分支进行的，所以上游节点必须正常通过执行下去。</p>
+<p><img src="/2022/01/20/azkaban%E6%89%A7%E8%A1%8C%E6%B5%81%E7%A8%8B%E6%BA%90%E7%A0%81%E5%88%86%E6%9E%90/image-20220220152829346.png" alt="image-20220220152829346"></p>
+<p>​    接着往线程池中提交节点任务执行，往活跃的任务执行集合中添加。</p>
+<p><img src="/2022/01/20/azkaban%E6%89%A7%E8%A1%8C%E6%B5%81%E7%A8%8B%E6%BA%90%E7%A0%81%E5%88%86%E6%9E%90/image-20220220152842165.png" alt="image-20220220152842165"></p>
+<p>具体的节点任务执行逻辑见下文说明。<br>4)当检查到工作流还没有执行完成时，通过调用progressGraph方法判断工作流程是否已经结束。<br>progressGraph的流程：<br>    首先遍历已完成的节点任务，获取到它们的下游节点列表。<br>    如果下游节点列表为空，代表已经执行完成工作流的最后一个节点了，调用finalizeFlow方法完成工作流处理。<br>finalizeFlow的处理流程如下：<br>获取工作流的最后节点任务，如果状态为已终止/终止中/失败/已取消，那么将工作流成功的标识设置为false。</p>
+<p><img src="/2022/01/20/azkaban%E6%89%A7%E8%A1%8C%E6%B5%81%E7%A8%8B%E6%BA%90%E7%A0%81%E5%88%86%E6%9E%90/image-20220220152857374.png" alt="image-20220220152857374"></p>
+<p>然后根据工作流的执行情况设置工作流最终执行状态，并将工作流完成标识设置为true。<br>    接下来要遍历下游节点，有一个处理逻辑需要注意，如果当前节点是条件节点，需要获取下游哪些节点需要跳过执行，并且将状态设置为跳过。然后将下游节点对象放到需要检查执行的节点集合nodesToCheck中。</p>
+<p><img src="/2022/01/20/azkaban%E6%89%A7%E8%A1%8C%E6%B5%81%E7%A8%8B%E6%BA%90%E7%A0%81%E5%88%86%E6%9E%90/image-20220220152911401.png" alt="image-20220220152911401"></p>
+<p>​        接着遍历nodesToCheck，调用notReadyToRun方法判断节点任务是否需要执行，如果状态为已完成/正在执行/终止中，那么不需要继续执行。</p>
+<p><img src="/2022/01/20/azkaban%E6%89%A7%E8%A1%8C%E6%B5%81%E7%A8%8B%E6%BA%90%E7%A0%81%E5%88%86%E6%9E%90/image-20220220152934840.png" alt="image-20220220152934840"></p>
+<p>​    需要执行的节点任务调用runReadyJob方法去提交节点任务的执行，如果提交任务执行正常并且存在已完成节点，调用updateFlow方法更新工作流信息。    </p>
+<p>5)继续进行工作流执行流程，直到FlowRunner里的runFlow方法检测到工作流执行完成，最后关闭线程池，更新工作流信息。</p>
+<p>【节点任务执行详细流程】<br>节点执行的逻辑在JobRunner的run方法。<br>    首先调用handleNonReadyStatus方法检查当前节点的状态，如果节点的状态为已取消/禁用/已终止,这种情况下不会创建日志。<br>    其它状态下会调用createAttachmentFile方法创建任务日志附件信息。<br>    如果需要延迟执行（比如配置了失败重试的间隔时间），那么在任务失败后会等待失败重试间隔时间后重新执行。</p>
+<p><img src="/2022/01/20/azkaban%E6%89%A7%E8%A1%8C%E6%B5%81%E7%A8%8B%E6%BA%90%E7%A0%81%E5%88%86%E6%9E%90/image-20220220153023654.png" alt="image-20220220153023654"></p>
+<p>​    然后开始执行节点任务，调用uploadExecutableNode方法上传可执行节点任务信息到数据库中。</p>
+<p>​    如果节点任务正常执行，先调用prepareJob方法初始化节点任务执行。</p>
+<p>prepareJob的初始化流程：</p>
+<p>首先调用insertJobMetadata方法添加任务属性的相关链接，方便下游消费者知道任务执行了什么，可以通过这些链接信息查询任务的执行日志信息。</p>
+<p>调用insertJVMAargs方法添加jvm参数，以便将工作流id，节点任务id，执行记录id等信息映射到正在运行的java进程上。</p>
+<p>设置节点任务的提交用户，如果节点配置有user.to.proxy属性，    就将其作为提交用户，否则就以azkaban的登录用户作为提交用户。</p>
+<p><img src="/2022/01/20/azkaban%E6%89%A7%E8%A1%8C%E6%B5%81%E7%A8%8B%E6%BA%90%E7%A0%81%E5%88%86%E6%9E%90/image-20220220153048641.png" alt="image-20220220153048641"></p>
+<p>​    调用buildJobExecutor方法构造节点任务执行器，主要流程：</p>
+<p>根据节点任务配置中的类型，通过反射得到节点任务的执行主类。</p>
+<p><img src="/2022/01/20/azkaban%E6%89%A7%E8%A1%8C%E6%B5%81%E7%A8%8B%E6%BA%90%E7%A0%81%E5%88%86%E6%9E%90/image-20220220153111842.png" alt="image-20220220153111842"></p>
+<p>解析获取节点任务的属性，然后调用callConstructor方法使用反射调用具体任务执行主类的构造方法。</p>
+<p><img src="/2022/01/20/azkaban%E6%89%A7%E8%A1%8C%E6%B5%81%E7%A8%8B%E6%BA%90%E7%A0%81%E5%88%86%E6%9E%90/image-20220220153117199.png" alt="image-20220220153117199"></p>
+<p>如果prepareJob方法的结果非空，任务正常执行，调用writeStatus方法将节点任务的执行状态更新到数据库中。<br>然后调用runJob方法执行节点任务，具体的执行逻辑在不同类型节点任务的执行主类run方法中，执行完成之后返回执行状态。<br>节点任务执行完成后，调用finalizeLogFile方法将执行日志信息写入到数据库中，调用finalizeAttachmentFile方法将附件文件信息上传到数据库中，最终调用writeStatus方法将节点任务执行信息更新到数据库中。</p>
+<h3 id="总结"><a href="#总结" class="headerlink" title="总结"></a>总结</h3><p>以上就是对azkaban任务执行流程源码的分析。</p>
+
+      
+    </div>
+    <footer class="article-footer">
+      <a data-url="http://example.com/2022/01/20/azkaban%E6%89%A7%E8%A1%8C%E6%B5%81%E7%A8%8B%E6%BA%90%E7%A0%81%E5%88%86%E6%9E%90/" data-id="ckzuycols00007r799c2rdun4" data-title="azkaban执行流程源码分析" class="article-share-link">Teilen</a>
+      
+      
+      
+  <ul class="article-tag-list" itemprop="keywords"><li class="article-tag-list-item"><a class="article-tag-list-link" href="/tags/azkaban/" rel="tag">azkaban</a></li></ul>
+
+    </footer>
+  </div>
+  
+    
+<nav id="article-nav">
+  
+    <a href="/2022/01/29/flink%E7%9A%84%E5%86%85%E5%AD%98%E7%AE%A1%E7%90%86%E6%9C%BA%E5%88%B6%E7%AE%80%E5%8D%95%E8%A7%A3%E6%9E%90/" id="article-nav-newer" class="article-nav-link-wrap">
+      <strong class="article-nav-caption">Neuer</strong>
+      <div class="article-nav-title">
+        
+          Flink内存管理源码解读
+        
+      </div>
+    </a>
+  
+  
+    <a href="/2021/11/19/druid%E4%B8%ADsql%E6%A8%A1%E5%9D%97%E5%88%86%E6%9E%90/" id="article-nav-older" class="article-nav-link-wrap">
+      <strong class="article-nav-caption">Älter</strong>
+      <div class="article-nav-title">druid中sql模块分析</div>
+    </a>
+  
+</nav>
+
+  
+</article>
+
+
+</section>
+        
+          <aside id="sidebar">
+  
+    
+
+  
+    
+  <div class="widget-wrap">
+    <h3 class="widget-title">Tags</h3>
+    <div class="widget">
+      <ul class="tag-list" itemprop="keywords"><li class="tag-list-item"><a class="tag-list-link" href="/tags/ID-MAPPING/" rel="tag">ID-MAPPING</a></li><li class="tag-list-item"><a class="tag-list-link" href="/tags/azkaban/" rel="tag">azkaban</a></li><li class="tag-list-item"><a class="tag-list-link" href="/tags/druid/" rel="tag">druid</a></li><li class="tag-list-item"><a class="tag-list-link" href="/tags/flink/" rel="tag">flink</a></li></ul>
+    </div>
+  </div>
+
+
+  
+    
+  <div class="widget-wrap">
+    <h3 class="widget-title">Tag Cloud</h3>
+    <div class="widget tagcloud">
+      <a href="/tags/ID-MAPPING/" style="font-size: 10px;">ID-MAPPING</a> <a href="/tags/azkaban/" style="font-size: 10px;">azkaban</a> <a href="/tags/druid/" style="font-size: 20px;">druid</a> <a href="/tags/flink/" style="font-size: 15px;">flink</a>
+    </div>
+  </div>
+
+  
+    
+  <div class="widget-wrap">
+    <h3 class="widget-title">Archiv</h3>
+    <div class="widget">
+      <ul class="archive-list"><li class="archive-list-item"><a class="archive-list-link" href="/archives/2022/01/">January 2022</a></li><li class="archive-list-item"><a class="archive-list-link" href="/archives/2021/11/">November 2021</a></li><li class="archive-list-item"><a class="archive-list-link" href="/archives/2021/10/">October 2021</a></li><li class="archive-list-item"><a class="archive-list-link" href="/archives/2021/07/">July 2021</a></li></ul>
+    </div>
+  </div>
+
+
+  
+    
+  <div class="widget-wrap">
+    <h3 class="widget-title">letzter Beitrag</h3>
+    <div class="widget">
+      <ul>
+        
+          <li>
+            <a href="/2022/01/29/flink%E7%9A%84%E5%86%85%E5%AD%98%E7%AE%A1%E7%90%86%E6%9C%BA%E5%88%B6%E7%AE%80%E5%8D%95%E8%A7%A3%E6%9E%90/">Flink内存管理源码解读</a>
+          </li>
+        
+          <li>
+            <a href="/2022/01/20/azkaban%E6%89%A7%E8%A1%8C%E6%B5%81%E7%A8%8B%E6%BA%90%E7%A0%81%E5%88%86%E6%9E%90/">azkaban执行流程源码分析</a>
+          </li>
+        
+          <li>
+            <a href="/2021/11/19/druid%E4%B8%ADsql%E6%A8%A1%E5%9D%97%E5%88%86%E6%9E%90/">druid中sql模块分析</a>
+          </li>
+        
+          <li>
+            <a href="/2021/11/19/druid%E4%B8%AD%E5%8F%91%E5%B8%83%E5%8D%B8%E8%BD%BDsegment%E5%92%8C%E6%9C%8D%E5%8A%A1%E6%BA%90%E7%A0%81%E8%A7%A3%E6%9E%90/">druid中发布卸载segment和服务源码解析</a>
+          </li>
+        
+          <li>
+            <a href="/2021/11/19/druid%E4%B8%AD%E8%81%9A%E5%90%88%E5%87%BD%E6%95%B0%E5%AE%9E%E7%8E%B0%E6%BA%90%E7%A0%81%E8%A7%A3%E6%9E%90/">druid中聚合函数实现源码解析</a>
+          </li>
+        
+      </ul>
+    </div>
+  </div>
+
+  
+</aside>
+        
+      </div>
+      <footer id="footer">
+  
+  <div class="outer">
+    <div id="footer-info" class="inner">
+      
+      &copy; 2022 Lime<br>
+      Powered by <a href="https://hexo.io/" target="_blank">Hexo</a>
+    </div>
+  </div>
+</footer>
+
+    </div>
+    <nav id="mobile-nav">
+  
+    <a href="/" class="mobile-nav-link">Home</a>
+  
+    <a href="/archives" class="mobile-nav-link">Archives</a>
+  
+</nav>
+    
+
+
+<script src="/js/jquery-3.4.1.min.js"></script>
+
+
+
+  
+<script src="/fancybox/jquery.fancybox.min.js"></script>
+
+
+
+
+<script src="/js/script.js"></script>
+
+
+
+
+
+  </div>
+</body>
+</html>

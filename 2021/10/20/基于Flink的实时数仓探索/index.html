@@ -1,0 +1,294 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  
+  
+  <title>基于Flink的实时数仓探索 | Big Face Cat</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
+  <meta name="description" content="在大数据的早期，因为Hadoop技术的迅速崛起，数据的存储格式主要是以文件的格式存在，所以各个企业搭建的数据仓库都是以文件处理为主，需要等待数据写入到文件中再集中进行批量处理，这其实就是我们常说的离线数仓。 实时数仓的发展在早期也有部分公司有实时计算的需求，但是数据量比较少，所以在实时方面无法形成完整的体系，实时数仓更多是以实时计算的形式存在，作为离线数仓的辅助，主要使用的技术也是Storm或Sp">
+<meta property="og:type" content="article">
+<meta property="og:title" content="基于Flink的实时数仓探索">
+<meta property="og:url" content="http://example.com/2021/10/20/%E5%9F%BA%E4%BA%8EFlink%E7%9A%84%E5%AE%9E%E6%97%B6%E6%95%B0%E4%BB%93%E6%8E%A2%E7%B4%A2/index.html">
+<meta property="og:site_name" content="Big Face Cat">
+<meta property="og:description" content="在大数据的早期，因为Hadoop技术的迅速崛起，数据的存储格式主要是以文件的格式存在，所以各个企业搭建的数据仓库都是以文件处理为主，需要等待数据写入到文件中再集中进行批量处理，这其实就是我们常说的离线数仓。 实时数仓的发展在早期也有部分公司有实时计算的需求，但是数据量比较少，所以在实时方面无法形成完整的体系，实时数仓更多是以实时计算的形式存在，作为离线数仓的辅助，主要使用的技术也是Storm或Sp">
+<meta property="og:locale">
+<meta property="og:image" content="http://example.com/2021/10/20/%E5%9F%BA%E4%BA%8EFlink%E7%9A%84%E5%AE%9E%E6%97%B6%E6%95%B0%E4%BB%93%E6%8E%A2%E7%B4%A2/image-20220220150146400.png">
+<meta property="og:image" content="http://example.com/2021/10/20/%E5%9F%BA%E4%BA%8EFlink%E7%9A%84%E5%AE%9E%E6%97%B6%E6%95%B0%E4%BB%93%E6%8E%A2%E7%B4%A2/image-20220220150424275.png">
+<meta property="og:image" content="http://example.com/2021/10/20/%E5%9F%BA%E4%BA%8EFlink%E7%9A%84%E5%AE%9E%E6%97%B6%E6%95%B0%E4%BB%93%E6%8E%A2%E7%B4%A2/image-20220220150745838.png">
+<meta property="og:image" content="http://example.com/2021/10/20/%E5%9F%BA%E4%BA%8EFlink%E7%9A%84%E5%AE%9E%E6%97%B6%E6%95%B0%E4%BB%93%E6%8E%A2%E7%B4%A2/image-20220220150833138.png">
+<meta property="article:published_time" content="2021-10-20T07:00:33.000Z">
+<meta property="article:modified_time" content="2022-02-20T08:26:45.040Z">
+<meta property="article:author" content="Lime">
+<meta property="article:tag" content="flink">
+<meta name="twitter:card" content="summary">
+<meta name="twitter:image" content="http://example.com/2021/10/20/%E5%9F%BA%E4%BA%8EFlink%E7%9A%84%E5%AE%9E%E6%97%B6%E6%95%B0%E4%BB%93%E6%8E%A2%E7%B4%A2/image-20220220150146400.png">
+  
+    <link rel="alternate" href="/atom.xml" title="Big Face Cat" type="application/atom+xml">
+  
+  
+    <link rel="shortcut icon" href="/favicon.png">
+  
+  
+    
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/typeface-source-code-pro@0.0.71/index.min.css">
+
+  
+  
+<link rel="stylesheet" href="/css/style.css">
+
+  
+    
+<link rel="stylesheet" href="/fancybox/jquery.fancybox.min.css">
+
+  
+<meta name="generator" content="Hexo 6.0.0"></head>
+
+<body>
+  <div id="container">
+    <div id="wrap">
+      <header id="header">
+  <div id="banner"></div>
+  <div id="header-outer" class="outer">
+    <div id="header-title" class="inner">
+      <h1 id="logo-wrap">
+        <a href="/" id="logo">Big Face Cat</a>
+      </h1>
+      
+    </div>
+    <div id="header-inner" class="inner">
+      <nav id="main-nav">
+        <a id="main-nav-toggle" class="nav-icon"></a>
+        
+          <a class="main-nav-link" href="/">Home</a>
+        
+          <a class="main-nav-link" href="/archives">Archives</a>
+        
+      </nav>
+      <nav id="sub-nav">
+        
+          <a id="nav-rss-link" class="nav-icon" href="/atom.xml" title="RSS Feed"></a>
+        
+        <a id="nav-search-btn" class="nav-icon" title="Suche"></a>
+      </nav>
+      <div id="search-form-wrap">
+        <form action="//google.com/search" method="get" accept-charset="UTF-8" class="search-form"><input type="search" name="q" class="search-form-input" placeholder="Suche"><button type="submit" class="search-form-submit">&#xF002;</button><input type="hidden" name="sitesearch" value="http://example.com"></form>
+      </div>
+    </div>
+  </div>
+</header>
+
+      <div class="outer">
+        <section id="main"><article id="post-基于Flink的实时数仓探索" class="h-entry article article-type-post" itemprop="blogPost" itemscope itemtype="https://schema.org/BlogPosting">
+  <div class="article-meta">
+    <a href="/2021/10/20/%E5%9F%BA%E4%BA%8EFlink%E7%9A%84%E5%AE%9E%E6%97%B6%E6%95%B0%E4%BB%93%E6%8E%A2%E7%B4%A2/" class="article-date">
+  <time class="dt-published" datetime="2021-10-20T07:00:33.000Z" itemprop="datePublished">2021-10-20</time>
+</a>
+    
+  </div>
+  <div class="article-inner">
+    
+    
+      <header class="article-header">
+        
+  
+    <h1 class="p-name article-title" itemprop="headline name">
+      基于Flink的实时数仓探索
+    </h1>
+  
+
+      </header>
+    
+    <div class="e-content article-entry" itemprop="articleBody">
+      
+        <p>在大数据的早期，因为Hadoop技术的迅速崛起，数据的存储格式主要是以文件的格式存在，所以各个企业搭建的数据仓库都是以文件处理为主，需要等待数据写入到文件中再集中进行批量处理，这其实就是我们常说的离线数仓。</p>
+<h3 id="实时数仓的发展"><a href="#实时数仓的发展" class="headerlink" title="实时数仓的发展"></a>实时数仓的发展</h3><p>在早期也有部分公司有实时计算的需求，但是数据量比较少，所以在实时方面无法形成完整的体系，实时数仓更多是以实时计算的形式存在，作为离线数仓的辅助，主要使用的技术也是Storm或Spark Streaming。基本所有的实时任务都是具体问题具体分析，来一个需求做一个，基本不考虑它们之间的关系。</p>
+<p><img src="/2021/10/20/%E5%9F%BA%E4%BA%8EFlink%E7%9A%84%E5%AE%9E%E6%97%B6%E6%95%B0%E4%BB%93%E6%8E%A2%E7%B4%A2/image-20220220150146400.png" alt="image-20220220150146400"></p>
+<p>随着产品和业务人员对实时数据需求的不断增多，这种开发模式出现的问题越来越多：</p>
+<ol>
+<li>指标越来越多，“摊大饼”的开发导致代码耦合问题严重。</li>
+<li>需求越来越多，有的需要明细数据，有的需要 OLAP 分析。</li>
+<li>每个需求都要申请资源，导致资源成本急速膨胀，资源不能集约有效利用。</li>
+<li>容错性低，由于是实时的数据处理，当线上环境出现问题或者要更新时，需要考虑如何确保数据不重不丢。</li>
+</ol>
+<p>其实仔细分析这些问题，可以知道和离线数仓遇到的问题比较相似，数据量大了、作业多了之后产生了各种问题，离线数仓当时是怎么解决的？离线数仓通过分层架构使数据解耦，多个业务可以共用数据，实时数仓是否也可以用分层架构呢？当然是可以的，但是细节上和离线的分层还是有一些不同。</p>
+<h3 id="实时数仓建设"><a href="#实时数仓建设" class="headerlink" title="实时数仓建设"></a>实时数仓建设</h3><p>实时数仓建设的方法论也是和离线数仓比较相似，毕竟二者遇到的问题比较类似，早期也是来一个需求，开发一个作业，当规模起来之后就需要考虑治理的问题。而分层则是一个不错的治理方式，通过合理的分层可以把不同粒度、不同来源的数据采用ER建模、维度建模的方式统一加工、清洗、汇总数据，形成基础的数仓公共层，并根据下游业务部门的具体需求建设数仓应用层。既满足了业务灵活多变的需求，又减少了重复建设导致的资源浪费和人力成本。</p>
+<p><img src="/2021/10/20/%E5%9F%BA%E4%BA%8EFlink%E7%9A%84%E5%AE%9E%E6%97%B6%E6%95%B0%E4%BB%93%E6%8E%A2%E7%B4%A2/image-20220220150424275.png" alt="image-20220220150424275"></p>
+<ol>
+<li>ods贴源层</li>
+</ol>
+<p>在贴源层，它的数据主要来自于上游的数据源，并和这些数据源保持一致，而数据源主要有来自业务的DB数据、程序服务的日志、用户的埋点数据和一些结构化数据。需要注意的是这些数据源都是可实时产生数据的流式数据通道，比如DB数据往往是来自MySQL binlog,Oracle Logminer等管道，而不是定时执行SQL去获取一批数据的管道。 </p>
+<ol start="2">
+<li>dwd明细层</li>
+</ol>
+<p>在明细层，主要是为了解决重复建设的问题，需要按照主题构建统一的基础明细层，同时为了给下游提供直接可用的数据，还需要对这些进行清洗、过滤和扩维。</p>
+<ol start="3">
+<li>dws汇总层</li>
+</ol>
+<p>在汇总层，主要是对业务需求进行梳理得到共性维度、采用维度建模的方式建立明细宽表；同时对于一些固化统计需求，可以实现进行轻度汇总，形成汇总指标表，减轻下游的计算压力，并形成可复用的结果。</p>
+<p>从上面看出，实时数仓和离线数仓的分层非常相似，甚至连命名都是相同的。但仔细对比可以发现他们存在很大的不同。</p>
+<h6 id="1、与离线数仓相比，实时数仓的存储是不同"><a href="#1、与离线数仓相比，实时数仓的存储是不同" class="headerlink" title="1、与离线数仓相比，实时数仓的存储是不同"></a>1、与离线数仓相比，实时数仓的存储是不同</h6><p>在建立离线数仓时，整个存储都是在建立在Hive上，但在实时数仓中，同一份表数据，可能会同时存储在多个不同的地方，比如明细层、汇总层的数据会同时存放在Kafka和Hdfs中，但是像用户信息这些维表数据则会借助于MySQL、HBase或其他KV数据库存储。</p>
+<h6 id="2、与离线数仓相比，实时数仓的层次更少一些"><a href="#2、与离线数仓相比，实时数仓的层次更少一些" class="headerlink" title="2、与离线数仓相比，实时数仓的层次更少一些"></a>2、与离线数仓相比，实时数仓的层次更少一些</h6><p>从目前建设离线数仓的经验来看，离线数仓中ads应用层数据一般是在数仓内部，但实时数仓中，ads 应用层数据已经落入应用系统的存储介质中，可以把该层与数仓的表分离。</p>
+<p>实时处理数据的时候，每建一个层次，数据必然会产生一定的延迟。举例，在统计跨天相关的订单事件中的数据时，可能会等到 00:00:05 或者 00:00:10 再统计，确保 00:00 前的数据已经全部接受到位了，再进行统计。所以，汇总层的层次太多的话，就会更大的加重人为造成的数据延迟。</p>
+<h3 id="实时数仓架构"><a href="#实时数仓架构" class="headerlink" title="实时数仓架构"></a>实时数仓架构</h3><p>目前大部分企业已经基于Hive搭建了自己的离线数仓，而离线数仓明显无法满足实时计算、实时查询的需求，所以一般而言，为了同时满足实时和离线的需要，会采用经典的Lambda架构。Lambda架构的核心思想是把大数据系统拆分成三层：批量层，速度层和服务层。</p>
+<ul>
+<li>批量层负责数据集存储以及全量数据集的预查询。</li>
+<li>速度层主要负责对增量数据进行计算，生成实时的计算结构。</li>
+<li>服务层用于响应用户的查询请求，它将离线计算层和实时计算层的结果进行合并，得到最后的结果，返回给用户。</li>
+</ul>
+<p>Lambda体系架构通过批处理层提供了高延迟的精度，而速度层提供了低延迟近似值。但同时Lambda架构也有相应的缺点，他需要对同样的业务逻辑进行两次编程：一次为批量计算的系统，一次为流程处理的系统，两个系统走的是不同的计算代码，最后处理的结构容易不一致。为此有人提出了更先进的Kappa架构，不过由于目前的技术发展和篇幅原因，暂且不展开描述。</p>
+<p>尽管Lambda架构有着上述缺点，仍然因为它的可行性、扩展性和鲁棒性，而被应用在各企业的数据仓库中。</p>
+<p><img src="/2021/10/20/%E5%9F%BA%E4%BA%8EFlink%E7%9A%84%E5%AE%9E%E6%97%B6%E6%95%B0%E4%BB%93%E6%8E%A2%E7%B4%A2/image-20220220150745838.png" alt="image-20220220150745838"></p>
+<p>上述是一个典型的Lambda架构，利用Flink强大的实时计算能力，大部分的数据处理可以交由Flink完成，而为了数据的可靠性和容错，还会将数据保存在HDFS内作为备份，同时也可以供已有的离线数仓进行消费，减少离线任务的延时。在ads层则是根据业务需求可以将计算的结果存放不同的存储查询引擎中。</p>
+<h3 id="实时数仓的未来"><a href="#实时数仓的未来" class="headerlink" title="实时数仓的未来"></a>实时数仓的未来</h3><p>随着大数据技术的发展，特别是实时OLAP技术的迅速崛起，目前开源的OLAP引擎在性能，易用等方面有了很大的提升，如Doris、Presto等，加上数据湖技术的迅速发展，使得流批结合的方式变得简单，可以简化实时数仓的处理流程和架构设计。</p>
+<p><img src="/2021/10/20/%E5%9F%BA%E4%BA%8EFlink%E7%9A%84%E5%AE%9E%E6%97%B6%E6%95%B0%E4%BB%93%E6%8E%A2%E7%B4%A2/image-20220220150833138.png" alt="image-20220220150833138"></p>
+<p>数据从日志统一采集到消息队列，再到实时数仓，作为基础数据流的建设是统一的。之后对于日志类实时特征，实时大屏类应用走实时流计算。对于Binlog类业务分析走实时OLAP批处理。</p>
+<p>可以看到引入数据湖之后（图中的Hudi/Iceberg，可以简单理解为一种数据格式，本质上还是存储在HDFS或者其他oss文件系统），实时数仓在计算引擎和底层存储引入了一个中间层——数据湖，同时基于数据湖的ACID能力，可以解决传统离线数仓不支持高效修改的痛点，同时也简化了整体数据流水线处理的过程，降低了整个处理的延迟。但是目前数据湖的发展不是太成熟，相应的生态支持也比较少，所以应用的不多，不过社区比较活跃，而且大家也都看到了数据湖在数仓中的潜力，在日后应该会在实时数仓中占有一席之地。</p>
+
+      
+    </div>
+    <footer class="article-footer">
+      <a data-url="http://example.com/2021/10/20/%E5%9F%BA%E4%BA%8EFlink%E7%9A%84%E5%AE%9E%E6%97%B6%E6%95%B0%E4%BB%93%E6%8E%A2%E7%B4%A2/" data-id="ckzuxjdfs0000tc793mvd6ttt" data-title="基于Flink的实时数仓探索" class="article-share-link">Teilen</a>
+      
+      
+      
+  <ul class="article-tag-list" itemprop="keywords"><li class="article-tag-list-item"><a class="article-tag-list-link" href="/tags/flink/" rel="tag">flink</a></li></ul>
+
+    </footer>
+  </div>
+  
+    
+<nav id="article-nav">
+  
+    <a href="/2021/11/11/APACHE-DRUID-%E6%9F%A5%E8%AF%A2%E8%BF%87%E7%A8%8B%E6%BA%90%E7%A0%81%E8%A7%A3%E6%9E%90/" id="article-nav-newer" class="article-nav-link-wrap">
+      <strong class="article-nav-caption">Neuer</strong>
+      <div class="article-nav-title">
+        
+          APACHE DRUID 查询过程源码解析
+        
+      </div>
+    </a>
+  
+  
+    <a href="/2021/07/20/%E5%AE%9E%E6%97%B6ID-Mapping%E6%A0%87%E8%AF%86%E5%94%AF%E4%B8%80%E7%94%A8%E6%88%B7%E6%96%B9%E6%A1%88/" id="article-nav-older" class="article-nav-link-wrap">
+      <strong class="article-nav-caption">Älter</strong>
+      <div class="article-nav-title">实时ID-Mapping标识唯一用户方案</div>
+    </a>
+  
+</nav>
+
+  
+</article>
+
+
+</section>
+        
+          <aside id="sidebar">
+  
+    
+
+  
+    
+  <div class="widget-wrap">
+    <h3 class="widget-title">Tags</h3>
+    <div class="widget">
+      <ul class="tag-list" itemprop="keywords"><li class="tag-list-item"><a class="tag-list-link" href="/tags/ID-MAPPING/" rel="tag">ID-MAPPING</a></li><li class="tag-list-item"><a class="tag-list-link" href="/tags/azkaban/" rel="tag">azkaban</a></li><li class="tag-list-item"><a class="tag-list-link" href="/tags/druid/" rel="tag">druid</a></li><li class="tag-list-item"><a class="tag-list-link" href="/tags/flink/" rel="tag">flink</a></li></ul>
+    </div>
+  </div>
+
+
+  
+    
+  <div class="widget-wrap">
+    <h3 class="widget-title">Tag Cloud</h3>
+    <div class="widget tagcloud">
+      <a href="/tags/ID-MAPPING/" style="font-size: 10px;">ID-MAPPING</a> <a href="/tags/azkaban/" style="font-size: 10px;">azkaban</a> <a href="/tags/druid/" style="font-size: 20px;">druid</a> <a href="/tags/flink/" style="font-size: 15px;">flink</a>
+    </div>
+  </div>
+
+  
+    
+  <div class="widget-wrap">
+    <h3 class="widget-title">Archiv</h3>
+    <div class="widget">
+      <ul class="archive-list"><li class="archive-list-item"><a class="archive-list-link" href="/archives/2022/01/">January 2022</a></li><li class="archive-list-item"><a class="archive-list-link" href="/archives/2021/11/">November 2021</a></li><li class="archive-list-item"><a class="archive-list-link" href="/archives/2021/10/">October 2021</a></li><li class="archive-list-item"><a class="archive-list-link" href="/archives/2021/07/">July 2021</a></li></ul>
+    </div>
+  </div>
+
+
+  
+    
+  <div class="widget-wrap">
+    <h3 class="widget-title">letzter Beitrag</h3>
+    <div class="widget">
+      <ul>
+        
+          <li>
+            <a href="/2022/01/29/flink%E7%9A%84%E5%86%85%E5%AD%98%E7%AE%A1%E7%90%86%E6%9C%BA%E5%88%B6%E7%AE%80%E5%8D%95%E8%A7%A3%E6%9E%90/">Flink内存管理源码解读</a>
+          </li>
+        
+          <li>
+            <a href="/2022/01/20/azkaban%E6%89%A7%E8%A1%8C%E6%B5%81%E7%A8%8B%E6%BA%90%E7%A0%81%E5%88%86%E6%9E%90/">azkaban执行流程源码分析</a>
+          </li>
+        
+          <li>
+            <a href="/2021/11/19/druid%E4%B8%ADsql%E6%A8%A1%E5%9D%97%E5%88%86%E6%9E%90/">druid中sql模块分析</a>
+          </li>
+        
+          <li>
+            <a href="/2021/11/19/druid%E4%B8%AD%E5%8F%91%E5%B8%83%E5%8D%B8%E8%BD%BDsegment%E5%92%8C%E6%9C%8D%E5%8A%A1%E6%BA%90%E7%A0%81%E8%A7%A3%E6%9E%90/">druid中发布卸载segment和服务源码解析</a>
+          </li>
+        
+          <li>
+            <a href="/2021/11/19/druid%E4%B8%AD%E8%81%9A%E5%90%88%E5%87%BD%E6%95%B0%E5%AE%9E%E7%8E%B0%E6%BA%90%E7%A0%81%E8%A7%A3%E6%9E%90/">druid中聚合函数实现源码解析</a>
+          </li>
+        
+      </ul>
+    </div>
+  </div>
+
+  
+</aside>
+        
+      </div>
+      <footer id="footer">
+  
+  <div class="outer">
+    <div id="footer-info" class="inner">
+      
+      &copy; 2022 Lime<br>
+      Powered by <a href="https://hexo.io/" target="_blank">Hexo</a>
+    </div>
+  </div>
+</footer>
+
+    </div>
+    <nav id="mobile-nav">
+  
+    <a href="/" class="mobile-nav-link">Home</a>
+  
+    <a href="/archives" class="mobile-nav-link">Archives</a>
+  
+</nav>
+    
+
+
+<script src="/js/jquery-3.4.1.min.js"></script>
+
+
+
+  
+<script src="/fancybox/jquery.fancybox.min.js"></script>
+
+
+
+
+<script src="/js/script.js"></script>
+
+
+
+
+
+  </div>
+</body>
+</html>
