@@ -73,6 +73,780 @@
       <div class="outer">
         <section id="main">
   
+    <article id="post-基于Flink的实时数仓探索" class="h-entry article article-type-post" itemprop="blogPost" itemscope itemtype="https://schema.org/BlogPosting">
+  <div class="article-meta">
+    <a href="/2022/02/20/%E5%9F%BA%E4%BA%8EFlink%E7%9A%84%E5%AE%9E%E6%97%B6%E6%95%B0%E4%BB%93%E6%8E%A2%E7%B4%A2/" class="article-date">
+  <time class="dt-published" datetime="2022-02-20T07:00:33.000Z" itemprop="datePublished">2022-02-20</time>
+</a>
+    
+  </div>
+  <div class="article-inner">
+    
+    
+      <header class="article-header">
+        
+  
+    <h1 itemprop="name">
+      <a class="p-name article-title" href="/2022/02/20/%E5%9F%BA%E4%BA%8EFlink%E7%9A%84%E5%AE%9E%E6%97%B6%E6%95%B0%E4%BB%93%E6%8E%A2%E7%B4%A2/">基于Flink的实时数仓探索</a>
+    </h1>
+  
+
+      </header>
+    
+    <div class="e-content article-entry" itemprop="articleBody">
+      
+        <p>在大数据的早期，因为Hadoop技术的迅速崛起，数据的存储格式主要是以文件的格式存在，所以各个企业搭建的数据仓库都是以文件处理为主，需要等待数据写入到文件中再集中进行批量处理，这其实就是我们常说的离线数仓。</p>
+<h3 id="实时数仓的发展"><a href="#实时数仓的发展" class="headerlink" title="实时数仓的发展"></a>实时数仓的发展</h3><p>在早期也有部分公司有实时计算的需求，但是数据量比较少，所以在实时方面无法形成完整的体系，实时数仓更多是以实时计算的形式存在，作为离线数仓的辅助，主要使用的技术也是Storm或Spark Streaming。基本所有的实时任务都是具体问题具体分析，来一个需求做一个，基本不考虑它们之间的关系。</p>
+<p><img src="/2022/02/20/%E5%9F%BA%E4%BA%8EFlink%E7%9A%84%E5%AE%9E%E6%97%B6%E6%95%B0%E4%BB%93%E6%8E%A2%E7%B4%A2/image-20220220150146400.png" alt="image-20220220150146400"></p>
+<p>随着产品和业务人员对实时数据需求的不断增多，这种开发模式出现的问题越来越多：</p>
+<ol>
+<li>指标越来越多，“摊大饼”的开发导致代码耦合问题严重。</li>
+<li>需求越来越多，有的需要明细数据，有的需要 OLAP 分析。</li>
+<li>每个需求都要申请资源，导致资源成本急速膨胀，资源不能集约有效利用。</li>
+<li>容错性低，由于是实时的数据处理，当线上环境出现问题或者要更新时，需要考虑如何确保数据不重不丢。</li>
+</ol>
+<p>其实仔细分析这些问题，可以知道和离线数仓遇到的问题比较相似，数据量大了、作业多了之后产生了各种问题，离线数仓当时是怎么解决的？离线数仓通过分层架构使数据解耦，多个业务可以共用数据，实时数仓是否也可以用分层架构呢？当然是可以的，但是细节上和离线的分层还是有一些不同。</p>
+<h3 id="实时数仓建设"><a href="#实时数仓建设" class="headerlink" title="实时数仓建设"></a>实时数仓建设</h3><p>实时数仓建设的方法论也是和离线数仓比较相似，毕竟二者遇到的问题比较类似，早期也是来一个需求，开发一个作业，当规模起来之后就需要考虑治理的问题。而分层则是一个不错的治理方式，通过合理的分层可以把不同粒度、不同来源的数据采用ER建模、维度建模的方式统一加工、清洗、汇总数据，形成基础的数仓公共层，并根据下游业务部门的具体需求建设数仓应用层。既满足了业务灵活多变的需求，又减少了重复建设导致的资源浪费和人力成本。</p>
+<p><img src="/2022/02/20/%E5%9F%BA%E4%BA%8EFlink%E7%9A%84%E5%AE%9E%E6%97%B6%E6%95%B0%E4%BB%93%E6%8E%A2%E7%B4%A2/image-20220220150424275.png" alt="image-20220220150424275"></p>
+<ol>
+<li>ods贴源层</li>
+</ol>
+<p>在贴源层，它的数据主要来自于上游的数据源，并和这些数据源保持一致，而数据源主要有来自业务的DB数据、程序服务的日志、用户的埋点数据和一些结构化数据。需要注意的是这些数据源都是可实时产生数据的流式数据通道，比如DB数据往往是来自MySQL binlog,Oracle Logminer等管道，而不是定时执行SQL去获取一批数据的管道。 </p>
+<ol start="2">
+<li>dwd明细层</li>
+</ol>
+<p>在明细层，主要是为了解决重复建设的问题，需要按照主题构建统一的基础明细层，同时为了给下游提供直接可用的数据，还需要对这些进行清洗、过滤和扩维。</p>
+<ol start="3">
+<li>dws汇总层</li>
+</ol>
+<p>在汇总层，主要是对业务需求进行梳理得到共性维度、采用维度建模的方式建立明细宽表；同时对于一些固化统计需求，可以实现进行轻度汇总，形成汇总指标表，减轻下游的计算压力，并形成可复用的结果。</p>
+<p>从上面看出，实时数仓和离线数仓的分层非常相似，甚至连命名都是相同的。但仔细对比可以发现他们存在很大的不同。</p>
+<h6 id="1、与离线数仓相比，实时数仓的存储是不同"><a href="#1、与离线数仓相比，实时数仓的存储是不同" class="headerlink" title="1、与离线数仓相比，实时数仓的存储是不同"></a>1、与离线数仓相比，实时数仓的存储是不同</h6><p>在建立离线数仓时，整个存储都是在建立在Hive上，但在实时数仓中，同一份表数据，可能会同时存储在多个不同的地方，比如明细层、汇总层的数据会同时存放在Kafka和Hdfs中，但是像用户信息这些维表数据则会借助于MySQL、HBase或其他KV数据库存储。</p>
+<h6 id="2、与离线数仓相比，实时数仓的层次更少一些"><a href="#2、与离线数仓相比，实时数仓的层次更少一些" class="headerlink" title="2、与离线数仓相比，实时数仓的层次更少一些"></a>2、与离线数仓相比，实时数仓的层次更少一些</h6><p>从目前建设离线数仓的经验来看，离线数仓中ads应用层数据一般是在数仓内部，但实时数仓中，ads 应用层数据已经落入应用系统的存储介质中，可以把该层与数仓的表分离。</p>
+<p>实时处理数据的时候，每建一个层次，数据必然会产生一定的延迟。举例，在统计跨天相关的订单事件中的数据时，可能会等到 00:00:05 或者 00:00:10 再统计，确保 00:00 前的数据已经全部接受到位了，再进行统计。所以，汇总层的层次太多的话，就会更大的加重人为造成的数据延迟。</p>
+<h3 id="实时数仓架构"><a href="#实时数仓架构" class="headerlink" title="实时数仓架构"></a>实时数仓架构</h3><p>目前大部分企业已经基于Hive搭建了自己的离线数仓，而离线数仓明显无法满足实时计算、实时查询的需求，所以一般而言，为了同时满足实时和离线的需要，会采用经典的Lambda架构。Lambda架构的核心思想是把大数据系统拆分成三层：批量层，速度层和服务层。</p>
+<ul>
+<li>批量层负责数据集存储以及全量数据集的预查询。</li>
+<li>速度层主要负责对增量数据进行计算，生成实时的计算结构。</li>
+<li>服务层用于响应用户的查询请求，它将离线计算层和实时计算层的结果进行合并，得到最后的结果，返回给用户。</li>
+</ul>
+<p>Lambda体系架构通过批处理层提供了高延迟的精度，而速度层提供了低延迟近似值。但同时Lambda架构也有相应的缺点，他需要对同样的业务逻辑进行两次编程：一次为批量计算的系统，一次为流程处理的系统，两个系统走的是不同的计算代码，最后处理的结构容易不一致。为此有人提出了更先进的Kappa架构，不过由于目前的技术发展和篇幅原因，暂且不展开描述。</p>
+<p>尽管Lambda架构有着上述缺点，仍然因为它的可行性、扩展性和鲁棒性，而被应用在各企业的数据仓库中。</p>
+<p><img src="/2022/02/20/%E5%9F%BA%E4%BA%8EFlink%E7%9A%84%E5%AE%9E%E6%97%B6%E6%95%B0%E4%BB%93%E6%8E%A2%E7%B4%A2/image-20220220150745838.png" alt="image-20220220150745838"></p>
+<p>上述是一个典型的Lambda架构，利用Flink强大的实时计算能力，大部分的数据处理可以交由Flink完成，而为了数据的可靠性和容错，还会将数据保存在HDFS内作为备份，同时也可以供已有的离线数仓进行消费，减少离线任务的延时。在ads层则是根据业务需求可以将计算的结果存放不同的存储查询引擎中。</p>
+<h3 id="实时数仓的未来"><a href="#实时数仓的未来" class="headerlink" title="实时数仓的未来"></a>实时数仓的未来</h3><p>随着大数据技术的发展，特别是实时OLAP技术的迅速崛起，目前开源的OLAP引擎在性能，易用等方面有了很大的提升，如Doris、Presto等，加上数据湖技术的迅速发展，使得流批结合的方式变得简单，可以简化实时数仓的处理流程和架构设计。</p>
+<p><img src="/2022/02/20/%E5%9F%BA%E4%BA%8EFlink%E7%9A%84%E5%AE%9E%E6%97%B6%E6%95%B0%E4%BB%93%E6%8E%A2%E7%B4%A2/image-20220220150833138.png" alt="image-20220220150833138"></p>
+<p>数据从日志统一采集到消息队列，再到实时数仓，作为基础数据流的建设是统一的。之后对于日志类实时特征，实时大屏类应用走实时流计算。对于Binlog类业务分析走实时OLAP批处理。</p>
+<p>可以看到引入数据湖之后（图中的Hudi/Iceberg，可以简单理解为一种数据格式，本质上还是存储在HDFS或者其他oss文件系统），实时数仓在计算引擎和底层存储引入了一个中间层——数据湖，同时基于数据湖的ACID能力，可以解决传统离线数仓不支持高效修改的痛点，同时也简化了整体数据流水线处理的过程，降低了整个处理的延迟。但是目前数据湖的发展不是太成熟，相应的生态支持也比较少，所以应用的不多，不过社区比较活跃，而且大家也都看到了数据湖在数仓中的潜力，在日后应该会在实时数仓中占有一席之地。</p>
+
+      
+    </div>
+    <footer class="article-footer">
+      <a data-url="http://example.com/2022/02/20/%E5%9F%BA%E4%BA%8EFlink%E7%9A%84%E5%AE%9E%E6%97%B6%E6%95%B0%E4%BB%93%E6%8E%A2%E7%B4%A2/" data-id="ckzuxjdfs0000tc793mvd6ttt" data-title="基于Flink的实时数仓探索" class="article-share-link">Share</a>
+      
+      
+      
+  <ul class="article-tag-list" itemprop="keywords"><li class="article-tag-list-item"><a class="article-tag-list-link" href="/tags/flink/" rel="tag">flink</a></li></ul>
+
+    </footer>
+  </div>
+  
+</article>
+
+
+
+  
+    <article id="post-实时ID-Mapping标识唯一用户方案" class="h-entry article article-type-post" itemprop="blogPost" itemscope itemtype="https://schema.org/BlogPosting">
+  <div class="article-meta">
+    <a href="/2022/02/20/%E5%AE%9E%E6%97%B6ID-Mapping%E6%A0%87%E8%AF%86%E5%94%AF%E4%B8%80%E7%94%A8%E6%88%B7%E6%96%B9%E6%A1%88/" class="article-date">
+  <time class="dt-published" datetime="2022-02-20T06:47:53.000Z" itemprop="datePublished">2022-02-20</time>
+</a>
+    
+  </div>
+  <div class="article-inner">
+    
+    
+      <header class="article-header">
+        
+  
+    <h1 itemprop="name">
+      <a class="p-name article-title" href="/2022/02/20/%E5%AE%9E%E6%97%B6ID-Mapping%E6%A0%87%E8%AF%86%E5%94%AF%E4%B8%80%E7%94%A8%E6%88%B7%E6%96%B9%E6%A1%88/">实时ID-Mapping标识唯一用户方案</a>
+    </h1>
+  
+
+      </header>
+    
+    <div class="e-content article-entry" itemprop="articleBody">
+      
+        <h4 id="导读"><a href="#导读" class="headerlink" title="导读"></a>导读</h4><p>在大数据环境下，常出现企业各部门之间相对独立，数据各自保管存储的情况，因为对数据的认知角度截然不同，最终导致数据之间难以互通，形成孤岛。所以需要把碎片化的数据全部串联起来，消除数据孤岛，提供一个用户的完整信息视图。数仓、画像、推荐等模块开发中，我们都需要对每一条行为日志数据标记用户的唯一标识。</p>
+<h4 id="什么是ONEID"><a href="#什么是ONEID" class="headerlink" title="什么是ONEID"></a>什么是ONEID</h4><p><strong>ONE ID即id-mapping技术通俗的说就是把几份不同来源的数据，通过各种技术手段识别为同一个对象或主体。</strong>例如一个集团旗下有多个事业部，每个事业部都有庞大的用户群体，但是这些群体对于集团来说是相互独立的，并不能整合起来利用，而通过id-mapping就能把这些碎片化的数据链接起来，消除数据孤岛，使多个不同的领域数据结合起来释放巨大的价值。</p>
+<p>ONE ID有非常多用处，比如跨屏跟踪和跨设备跟踪，将一个用户的手机、PC、平板等设备的上的行为信息串联到一起。再比如精准的营销业务，他的一个重点的环节就是要把不同业务系统不同用户统一起来管理，将不同业务系统平台里的用户历史兴趣数据匹配起来。可以说，<strong>没有用户ONE ID，程序化营销可能就变成了盲目投放，他的精准投放的优势也就不存在了。</strong></p>
+<h4 id="现有技术的技术方案"><a href="#现有技术的技术方案" class="headerlink" title="现有技术的技术方案"></a>现有技术的技术方案</h4><p>现有的技术多是两大类</p>
+<p>一．将各系统埋数据抽象成“点”和“边”，用图计算来判断成同一个对象，从而构建一个映射字典。这种方案通用性比较高，但是容易出现数据多对多，一对多的情况。</p>
+<p>整体流程的具体实现为：</p>
+<p>1.将当日数据中的所有用户标识字段，及标志字段之间的关联，生成点集合 、边集合。</p>
+<p>2.将上一日的所有用户标识字段，及标志字段之间的关联，也生成点集合、边集合。</p>
+<p>3.将上面两类点集合、边集合合并到一起生成一个图。</p>
+<p>4.再对上述的图执行“最大连通子图”算法，得到一个连通子图结果。</p>
+<p>5.在从结果图中取到哪些id属于同一组，并生成一个唯一标识。</p>
+<p>6.将上面步骤生成的唯一标识去比对前日的ids-&gt;guid映射表（如果一个人已经存在guid，则沿用原来的guid（guid就是一个自然人的唯一id）。</p>
+<p>二．以离线的方式，根据对应业务的规则，通过hive等相关框架工具将全量的数据进行T+1的数据融合清洗成为一张全量的结果表。这种方案每天都计算全量的数据，在业务数据庞大的情况下很容易造成资源的浪费，并且根据业务规则编写的清洗脚本不易维护，增加成本。</p>
+<p>现有的技术都有着不同程度的缺陷以及不足，本申请提案基于大量不同场景下的实践，基于数据的横向属性等级和纵向维度属性值等级去做ID合并，底层引入列式key-value存储引擎和实时流计算引擎。跟上述两种方案不同的是，本提案引入实时计算框架提升数据写入和数据检索性能以及数据的实时性，同时引入两种等级概念保证数据的准确性。</p>
+<h6 id="现有技术方案存在问题"><a href="#现有技术方案存在问题" class="headerlink" title="现有技术方案存在问题"></a>现有技术方案存在问题</h6><ol>
+<li>多个自然人识别为同一自然人的问题，如：两个人同时用一个手机注册了账号，由于他们都关联了手机设备id，现有技术就会将这两个自然人识别成同一个自然人，不符合实际。而以上情况在实际的场景下也会经常出现。</li>
+<li>多个ID所属关系的问题，如当两人都用各自手机设备绑定自己的账号之后，其中一人使用另一人的手机设备登录了自己账号，这种情况下现有技术会将两个手机设备都绑定到其中一人，不符合实际情况。</li>
+<li>实时性较低，目前市面上的开源方案多是基于离线T+1数据处理，这样数据实时性会比较低。</li>
+<li>不支持动态的更新数据处理逻辑，在对应业务更新修改的情况下需要重新的部署、启动对应程序甚至重新开发，极大的增加了相关人员的工作量。</li>
+</ol>
+<h4 id="实时处理方案"><a href="#实时处理方案" class="headerlink" title="实时处理方案"></a>实时处理方案</h4><p>为了克服现有技术的不足，笔者总结一套旨在提供一种高时效性的方案，并且能完美一对一映射ID和自然人。</p>
+<p><img src="/2022/02/20/%E5%AE%9E%E6%97%B6ID-Mapping%E6%A0%87%E8%AF%86%E5%94%AF%E4%B8%80%E7%94%A8%E6%88%B7%E6%96%B9%E6%A1%88/wpsKkZmLW.jpg" alt="img"></p>
+<p>在本方案中，通过基于横向的ID属性等级和纵向维度属性值等级对数据进行判定，解决了数据经过处理之后相关ID和自然人不能一对一映射的问题，这是本方案的核心概念。为了使本领域技术人员更好的理解本申请提供的技术方案，下面对横向属性的等级和纵向维度属性值等级进行一个简单的说明：</p>
+<p>本方案将数据中的字段划分为两类：一类是ID属性，如身份证、手机号、微信id等属于自然人的标识信息。另一类是维度属性，如：数据产生时间、数据来源方式、数据来源地址、事件名称等属于当前数据的标识信息。</p>
+<p>横向ID属性等级，横向ID属性等级高低用来标识在一条数据中的哪个ID属性更加能标识一个自然人。举例来说：身份证相比手机号更能标识一个自然人，那么身份证等级高于手机号。它的作用就是用来找出数据中哪一条ID属性最能标识一个自然人。</p>
+<p>纵向维度属性值等级，纵向的维度属性值等级划分是根据各个纵向维度属性中的具体值进行划分，举个例子：数据中包含一个字段叫事件类型是用来记录记录用户产生数据时所触发的事件类型，选择该字段为纵向维度属性。这个纵向维度属性值存在下几种：点击事件、登录事件、注册事件、实名认证事件。其中明显实名认证事件中所携带的ID信息更加准确，那么实名认证事件的等级就高于其他几种行为事件。纵向维度属性值等级作用就是用来找出多条数据中携带的ID信息更加准确的那条数据。</p>
+<p>本方案实提供了一种数据实时标识唯一用户的方法，基于Flink分布式流式处理引擎以及hbase分布式存储，所述方法包括数据接受单元，数据合并单元，数据存储单元，数据处理单元，全局配置单元五个主要单元。下图为本方案的各个单元简单架构和数据流向：</p>
+<p><img src="/2022/02/20/%E5%AE%9E%E6%97%B6ID-Mapping%E6%A0%87%E8%AF%86%E5%94%AF%E4%B8%80%E7%94%A8%E6%88%B7%E6%96%B9%E6%A1%88/wpszu0gq8.jpg" alt="img"></p>
+<p>数据接受单元，根据配置信息，接入不同来源的数据，可以是埋点数据，也可以是实时业务数据库binlog，同时还支持离线数据，如hive数据仓库数据。将接数据接受单元，根据配置信息，接入不同来源的数据，可以是埋点数据，也可以是实时业务数据库binlog，同时还支持离线数据，如hive数据仓库数据。将接入的不同来源的数据统一解析成为所配置的预设格式，输出到下游数据处理单元。过滤到下游的数据需要包括数据产生时间，以及配置的属性字段。</p>
+<p>数据合并单元，该模块可以对多条数据进行合并处理，也就是说当一条数据无法提体现一个自然人的完整动作时候可以使用到这个模块将多条数据合并为一条。</p>
+<p>数据存储单元，数据存储单元使用hbase作为分布式的存储框架，hbase存放的rowkey格式为：{分区号}\u0002{属性名称}\u0002{属性值}，value值包括多个属性，其中必要的为one_id,event_time,另外还需要增加维度属性</p>
+<table>
+<thead>
+<tr>
+<th>row_key</th>
+<th>one_id</th>
+<th>event_time</th>
+<th>维度1</th>
+<th>维度2</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>主键</td>
+<td>唯一id</td>
+<td>发生时间</td>
+<td>维度值</td>
+<td>维度值</td>
+</tr>
+</tbody></table>
+<p>数据处理单元，本模块基于flink分布式处理框架开发。根据配置信息所给出的等级信息，接入的数据和数据存储单元中的hbase数据进行匹配，匹配判定当前数据是否属于系统已经存在的自然人，如能匹配则将当前数据赋予对应的唯一id，并且将数据输出到下游，匹配不上则生成一个新的唯一id输出到下游，同时更新数据存储单元中的数据。</p>
+<p>全局配置单元，该模块可以实时更新flink流式处理引擎中的业务和流程配置，可以实时更新数据纵向横向等级，实现一次部署，终身运行。</p>
+<p>为了使本技术领域人员更好的理解本方案，下面结合示例和具体实施方式对本方案进行进一步的详细说明。显然，所描述的实施例仅仅是本方案的一部分实施例，而不是全部的实施例。</p>
+<p>根据配置信息，接入不同来源的数据。可以理解到的是，本方案接入数据可来源于不同的系统中的不同业务数据，根据配置中的信息，动态的接入不同来源的数据然后对其进行清洗和转化，并且输出到数据处理单元进行数据处理。</p>
+<p>数据存储单元是用做于存储数据的，本方案摒弃了传统的宽表存储的方式，使用K-V的形式，将数据存储为高表，高表和宽表如下所示：</p>
+<p>宽表：</p>
+<table>
+<thead>
+<tr>
+<th>one_id（唯一ID）</th>
+<th>id_card(身份证)</th>
+<th>Phone（手机号）</th>
+<th>open_id（设备id）</th>
+<th>user_id（用户id）</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>1</td>
+<td>445</td>
+<td>136</td>
+<td>O1</td>
+<td>U1</td>
+</tr>
+</tbody></table>
+<p>高表：</p>
+<table>
+<thead>
+<tr>
+<th>列值(hash值\u0002字段名\u0002字段值)</th>
+<th>唯一id</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>Hash值\u0002id_card\u0002445</td>
+<td>1</td>
+</tr>
+<tr>
+<td>Hash值\u0002phone\u0002136</td>
+<td>1</td>
+</tr>
+<tr>
+<td>Hash值\u0002open_id\u0002o1</td>
+<td>1</td>
+</tr>
+<tr>
+<td>Hash值\u0002user_id\u0002u1</td>
+<td>1</td>
+</tr>
+</tbody></table>
+<p>数据合并处理单元适用于处理多条数据才能体现一个行为的复杂数据，比如当一个自然人的两个动作产生的两条数据表示一个具体的行为，下游要通过这个行为来做数据处理，那么就需要数据合并处理单元将这两个动作产生的两条数据合并为一条行为数据输出到下游，具体实现为两条数据需要根据其中一个字段进行关联，先到达的数据会存放在flink的state中等待这个字段关联的数据到达之后合并成同一条数据输出到下游进行数据处理。</p>
+<p>数据处理单元是对当前的数据进行唯一id融合的单元，下面给出一个详细的实施例，当前数据经过接入单元处理后如下所示：</p>
+<table>
+<thead>
+<tr>
+<th>行号</th>
+<th>id_card(身份证)</th>
+<th>Phone（手机号）</th>
+<th>open_id（设备id）</th>
+<th>user_id（用户id）</th>
+<th>event_name</th>
+<th>event_time</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>1</td>
+<td>445</td>
+<td></td>
+<td>O1</td>
+<td></td>
+<td>绑定</td>
+<td>1619764657236</td>
+</tr>
+<tr>
+<td>2</td>
+<td></td>
+<td>136</td>
+<td>O2</td>
+<td></td>
+<td>订单</td>
+<td>1619764657238</td>
+</tr>
+<tr>
+<td>3</td>
+<td></td>
+<td>136</td>
+<td>O1</td>
+<td>U3</td>
+<td>认证</td>
+<td>1619764657239</td>
+</tr>
+</tbody></table>
+<p>从上图可以得知，当前数据中存在的横向ID属性有id_card、phone 、open_id 、 user_id四个，纵向维度属性有一个event_name。<br>假设当前从配置中获取的横向ID属性等级如下：<br>id_card &gt; phone &gt; open_id &gt; user_id<br>假设当前从配置中获取event_name的纵向维度属性值等级如下：<br>绑定 &gt; 认证 &gt; 下单 &gt; 浏览<br>1.根据当前数据各个属性字段去高表中进行查询对应的OneID，拿到当前数据最高属性等级字段对应的OneID作为此条数据OneID。<br>2.当都没有查找到对应的OneID，则新生成一个OneID。<br>3.根据当前行为等级进行判定当前ID是否更新OneID，如果当前数据中的event_name纵向维度属性值等级高于当前属性在高表中event_name对应的等级，则更新高表。如：当前埋点事件微信unionID为1,高表已经存在unionID为1的数据以及对应OneID，如果本次纵向维度属性值等级高于高表unionID对应的纵向等级，则更新高表中此unionID对应的OneID、event_name和事件时间。反之则不更新。当纵向维度属性值等级相同时，根据事件时间进行更新。如：当前埋点事件微信unionID为1,高表已经存在unionID为1的数据对应OneID，如果本数据中的纵向属性值等级等于已存在的unionID对应的纵向属性值等级，并且本数据中的事件时间大于已存在的unionID对应的事件时间，则更新高表此unionID对应的OneID、event_name和事件时间，反之则不更新。<br>按照顺序执行逻辑，如下所示：<br>1.执行行号为1的埋点数据：<br>由于在高表找不到，所以会新生成一个one_id为1。高表如下图所示：</p>
+<table>
+<thead>
+<tr>
+<th>row_key</th>
+<th>one_id</th>
+<th>event_name</th>
+<th>event_time</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>id_card\u0002445</td>
+<td>1</td>
+<td>绑定</td>
+<td>1619764657236</td>
+</tr>
+<tr>
+<td>open_id\u0002O1</td>
+<td>1</td>
+<td>绑定</td>
+<td>1619764657236</td>
+</tr>
+</tbody></table>
+<p>2.执行号为2的埋点数据：<br>按照id属性等级查找，由于手机号和open_id都找不到one_id，则新生成一个one_id，one_id为2。高表如下图所示：</p>
+<table>
+<thead>
+<tr>
+<th>row_key</th>
+<th>one_id</th>
+<th>event_name</th>
+<th>event_time</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>id_card\u0002445</td>
+<td>1</td>
+<td>绑定</td>
+<td>1619764657236</td>
+</tr>
+<tr>
+<td>open_id\u0002O1</td>
+<td>1</td>
+<td>绑定</td>
+<td>1619764657236</td>
+</tr>
+<tr>
+<td>phone\u0002136</td>
+<td>2</td>
+<td>订单</td>
+<td>1619764657238</td>
+</tr>
+<tr>
+<td>open_id\u0002O2</td>
+<td>2</td>
+<td>订单</td>
+<td>1619764657238</td>
+</tr>
+</tbody></table>
+<p>3.执行行号为3的埋点数据：<br>按照id属性等级查找，手机号136找到对应的one_id为2，open_id为O1对应的的one_id为1，由于手机号的id属性等级比open_id的等级高，则此次使用手机号做id合并，所以本条数据对应的one_id为2.接下来判断纵向属性值等级，由于手机号136的上一次event_name为订单，对应的等级低于此次，则event_name更新为认证。而对于open_id，由于本次open_id的event_name等级比上一次的低（认证 &lt; 绑定），则对于opne_id不做任何调整。对于user_id，由于不存在one_id，则直接更新即可。本次处理完成之后高表如下所示：</p>
+<table>
+<thead>
+<tr>
+<th>row_key</th>
+<th>one_id</th>
+<th>event_name</th>
+<th>event_time</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>id_card\u0002445</td>
+<td>1</td>
+<td>绑定</td>
+<td>1619764657236</td>
+</tr>
+<tr>
+<td>open_id\u0002O1</td>
+<td>1</td>
+<td>绑定</td>
+<td>1619764657236</td>
+</tr>
+<tr>
+<td>phone\u0002136</td>
+<td>2</td>
+<td>认证</td>
+<td>1619764657239</td>
+</tr>
+<tr>
+<td>open_id\u0002O2</td>
+<td>2</td>
+<td>订单</td>
+<td>1619764657238</td>
+</tr>
+<tr>
+<td>user_id\u0002U3</td>
+<td>2</td>
+<td>认证</td>
+<td>1619764657239</td>
+</tr>
+</tbody></table>
+<p>最后，将高表导出转成宽表，这里有多种实现方式。</p>
+<p>可选的，通过hive建立hbase的映射表，根据one_id进行分组，将高表的数据转化为宽表数据。</p>
+<p>宽表如下图所示：</p>
+<table>
+<thead>
+<tr>
+<th>one_id</th>
+<th>id_card</th>
+<th>phone</th>
+<th>open_id</th>
+<th>user_id</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>1</td>
+<td>445</td>
+<td></td>
+<td>O1</td>
+<td></td>
+</tr>
+<tr>
+<td>2</td>
+<td></td>
+<td>136</td>
+<td>O2</td>
+<td>U3</td>
+</tr>
+</tbody></table>
+<p>全局配置单元是本方案中一个重要的模块，他能实时更新数据处理单元、数据接入单元中的一些业务配置和数据处理逻辑。</p>
+<p>可以理解的是，当想更改当前的一些数据处理逻辑或者数据接入逻辑时，由于实时作业一般不会随意停止，就可以通过全局配置单元修改程序逻辑。比如想要修改横纵向等级。如原本的open_id等级大于user_id，但是经过某些业务调整需要将user_id的等级提高，就可以通过全局配置单元修改横向等级配置实时同步到处理单元中。</p>
+<p>可选的，实施人员可以通过web页面方式将配置信息同步到mysql当中，自定义source每隔一段固定时间就拉去mysql中的配置信息，然后通过flink内部的广播流广播到各个计算节点（taskmanager），这样使得各个节点都能同步到最新的全局配置。</p>
+<p>通过本方案,我们可以接入不同数据源和不同系统的实时埋点数据，通过id的关联关系，将各个系统各个数据源的数据根据id属性的关联关系识别为唯一的一个自然人，并且具有极高的实效性。通过本方案，我们就能更加全面的、完整的了解各个系统的用户，从而更好的构建上层应用。</p>
+
+      
+    </div>
+    <footer class="article-footer">
+      <a data-url="http://example.com/2022/02/20/%E5%AE%9E%E6%97%B6ID-Mapping%E6%A0%87%E8%AF%86%E5%94%AF%E4%B8%80%E7%94%A8%E6%88%B7%E6%96%B9%E6%A1%88/" data-id="ckzux4ae00000gm79d6e3gyzb" data-title="实时ID-Mapping标识唯一用户方案" class="article-share-link">Share</a>
+      
+      
+      
+  <ul class="article-tag-list" itemprop="keywords"><li class="article-tag-list-item"><a class="article-tag-list-link" href="/tags/ID-MAPPING/" rel="tag">ID-MAPPING</a></li></ul>
+
+    </footer>
+  </div>
+  
+</article>
+
+
+
+  
+    <article id="post-druid中sql模块分析" class="h-entry article article-type-post" itemprop="blogPost" itemscope itemtype="https://schema.org/BlogPosting">
+  <div class="article-meta">
+    <a href="/2022/02/19/druid%E4%B8%ADsql%E6%A8%A1%E5%9D%97%E5%88%86%E6%9E%90/" class="article-date">
+  <time class="dt-published" datetime="2022-02-19T14:55:44.000Z" itemprop="datePublished">2022-02-19</time>
+</a>
+    
+  </div>
+  <div class="article-inner">
+    
+    
+      <header class="article-header">
+        
+  
+    <h1 itemprop="name">
+      <a class="p-name article-title" href="/2022/02/19/druid%E4%B8%ADsql%E6%A8%A1%E5%9D%97%E5%88%86%E6%9E%90/">druid中sql模块分析</a>
+    </h1>
+  
+
+      </header>
+    
+    <div class="e-content article-entry" itemprop="articleBody">
+      
+        <h4 id="简介"><a href="#简介" class="headerlink" title="简介"></a>简介</h4><p>​    sql模块的代码目为一个module是druid-sql。用于对sql进行一个解析，底层使用apache calcate进行实现，本文对druid中的sql模块进行一个分析。</p>
+<p>在SqlModule中配置了多个子Module：</p>
+<ul>
+<li>DruidCalciteSchemaModule</li>
+<li>CalcitePlannerModule</li>
+<li>SqlAggregationModule</li>
+<li>DruidViewModule</li>
+<li>SqlHttpModule</li>
+<li>AvaticaModule</li>
+</ul>
+<h5 id="SqlHttpModule配置通过http执行sql查询"><a href="#SqlHttpModule配置通过http执行sql查询" class="headerlink" title="SqlHttpModule配置通过http执行sql查询"></a>SqlHttpModule配置通过http执行sql查询</h5><p>在该Module中主要配置了SqlResource，用于支持通过http方式使用sql进行查询。 http查询路径：/druid/v2/sql/ POST 请求 参数（通常只需要设置query参数）：</p>
+<figure class="highlight json"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br></pre></td><td class="code"><pre><span class="line">&#123;</span><br><span class="line">    <span class="attr">&quot;query&quot;</span>: <span class="string">&quot;select count(*) from test&quot;</span>,</span><br><span class="line">    <span class="attr">&quot;resultFormat&quot;</span>: <span class="string">&quot;OBJECT&quot;</span>,<span class="comment">//默认：OBJECT,支持：ARRAY，ARRAYLINES，CSV，OBJECT，OBJECTLINES</span></span><br><span class="line">    <span class="attr">&quot;header&quot;</span>: <span class="literal">false</span>, <span class="comment">// 默认false,当设置为true时，返回结果将包含标题行</span></span><br><span class="line">    <span class="attr">&quot;context&quot;</span>: &#123;&#125;, <span class="comment">//可设置查询超时等参数</span></span><br><span class="line">    <span class="attr">&quot;parameters&quot;</span>:[  <span class="comment">//sql查询参数</span></span><br><span class="line">        &#123;</span><br><span class="line">            <span class="attr">&quot;type&quot;</span>: <span class="string">&quot;INTEGER&quot;</span> <span class="comment">// 各种数据类型，包含BOOLEAN/INTEGER/DECIMAL/DOUBLE/VARCHAR等</span></span><br><span class="line">            <span class="string">&quot;value&quot;</span>: <span class="string">&quot;&quot;</span> <span class="comment">//根据类型设置值</span></span><br><span class="line">        &#125;</span><br><span class="line">    ] <span class="comment">//</span></span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<h6 id="sql执行过程中的事务状态变化："><a href="#sql执行过程中的事务状态变化：" class="headerlink" title="sql执行过程中的事务状态变化："></a>sql执行过程中的事务状态变化：</h6><figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br></pre></td><td class="code"><pre><span class="line">NEW -()-&gt; INITIALIZED -&gt; PLANNED -&gt; AUTHORIZING -&gt; AUTHORIZED -&gt; EXECUTING -&gt; DONE</span><br><span class="line">                                              	     -&gt; UNAUTHORIZED -&gt; DONE</span><br></pre></td></tr></table></figure>
+
+<h6 id="sql执行计划逻辑"><a href="#sql执行计划逻辑" class="headerlink" title="sql执行计划逻辑"></a>sql执行计划逻辑</h6><p>1.首先调用lifecycle.initialize初始化lifecycle，使用UUID.randomUUID().toString()生成唯一的sqlQueryId<br>2.然后调用<br>3.调用lifecycle.planAndAuthorize生成执行计划并进行认证。目前认证没有提供完整实现，后续再完善。该方法主要用于生成执行计划。<br>4.通过PlannerFactory创建DruidPlanner。先创建PlannerContext、QueryMaker和FrameworkConfig。<br>    PlannerContext： 生产执行计划的上下文环境，包含很多信息</p>
+<figure class="highlight java"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">final</span> DruidOperatorTable operatorTable, </span><br><span class="line">  <span class="keyword">final</span> ExprMacroTable macroTable,</span><br><span class="line">  <span class="keyword">final</span> PlannerConfig plannerConfig,</span><br><span class="line">  <span class="keyword">final</span> DateTime localNow,</span><br><span class="line">  <span class="keyword">final</span> Map&lt;String, Object&gt; queryContext,</span><br><span class="line">  <span class="keyword">final</span> List&lt;TypedValue&gt; parameters,</span><br><span class="line">  <span class="keyword">final</span> AuthenticationResult authenticationResult</span><br></pre></td></tr></table></figure>
+
+<ul>
+<li>QueryMaker: 通过QueryLifecycle执行解析sql得到的Druid的Query，并将结果转换为合适类型返回。</li>
+<li>FrameworkConfig：calcite的接口，用于配置生成执行计划需要的一些配置信息，包含如下配置：</li>
+<li>SqlParser.Config：可配置解析sql时的大小写敏感（设置为true）、引号类型（双引号）、是否转换为大小写（设置为不转换）等。</li>
+<li>DruidConvertletTable：一些操作的转换，暂时没做特别处理。</li>
+<li>DruidOperatorTable：sql函数或操作转为为druid相应操作的映射表，比如count函数转换为CountAggregator。</li>
+<li>DruidRexExecutor：用于做常量折叠，精简表达式</li>
+<li>DruidTypeSystem：数据类型，各数据类型的长度/精度/大小写敏感，自增等，比如VARCHAR类型的最大长度为65535。基本沿用了calcite的默认实现RelDataTypeSystemImpl。</li>
+<li>SchemaPlus：默认Schema配置，默认Schema设置为druid。</li>
+<li>sqlToRelConverterConfig：配置sql解析树转为关系代数表达式的配置</li>
+</ul>
+<p>5.生成DruidPlanner后就调用planner的plan()方法开始生成执行计划。DruidPlanner生成执行计划的流程如下：</p>
+<p>(1) 调用Calcite的Planner接口的parse()方法进行Sql解析，该接口提供的接口包括：</p>
+<p>① parse():将SQL解析为解析树<br>② validate():校验SQL解析树，通常用于校验被修改后的SQL解析树。<br>③ rel()：将SQL解析树转换为关系表达式语法输。<br>④ transform(): 基于特殊优化对关系表达式语法树进行优化，并转换为优化后的关系表达式语法树。<br>    Calcite提供了一个默认实现org.apache.calcite.prepare.PlannerImpl，DruidPlanner在构造时使用FrameworkConfig创建了一个PlannerImpl实例。</p>
+<p>(2) 采用访问者模式，使用SqlParameterizerShuttle作为一个访问者便利SQL解析树，并替换其中的参数。</p>
+<p>(3) 替换参数后调用Planner的validate()方法校验SQL解析树。</p>
+<p>(4) 调用Planner的rel()方法将SQL解析树转换为关系表达式语法树。</p>
+<p>(5) 调用内部方法planWithDruidConvention()对SQL解析树做一些优化。</p>
+<p>① 检查sqlOuterLimit参数，如果设置了值，则相当于默认加了limit；</p>
+<p>② 再次采用访问者模式替换参数变量；</p>
+<p>③ 调用planner的transform()方法将SQL解析树的根节点RelNode转为DruidRel。</p>
+<p>④ 如果是Explain类型的SQL语句，则返回解析树，如果是查询类型的SQL，则调用DruidRel的runQuery()方法进行执行。</p>
+<p>DruidRel是一个抽象类，继承了AbstractRelNode抽象类，而抽象类是RelNode接口的一个base实现，RelNode是一个关系表达式接口。DruidRel提供了以下几个实现类：</p>
+<ul>
+<li>DruidJoinQueryRel：JOIN类型的查询</li>
+<li>DruidOuterQueryRel：最外层的查询，里面可能包含子查询。</li>
+<li>DruidQueryRel：普通单表的查询</li>
+<li>DruidUnionDataSourceRel：UNION ALL类型的语句，只支持常规表类型的数据</li>
+<li>DruidUnionRel：UNION ALL类型的语句，支持任何类型的数据，比如子查询、Lookup等</li>
+</ul>
+<p>6.最后调用lifecycle的execute()方法，返回执行结果。注意，结果在DruidRel的runQuery()方法执行后就已经获得。<br>7.通过Yielder将Sequence封装的数据流式返回客户端。</p>
+<h5 id="sql处理流程"><a href="#sql处理流程" class="headerlink" title="sql处理流程"></a>sql处理流程</h5><p>本节主要对druid的SQL执行过程执行阐述。</p>
+<p>druid支持使用restAPI、calcites-jdbc、二种方式进行SQL查询，其核心都是使用calcites将SQL转化为json查询体，然后走json查询的逻辑。</p>
+<p><img src="/2022/02/19/druid%E4%B8%ADsql%E6%A8%A1%E5%9D%97%E5%88%86%E6%9E%90/image-20220219230229332.png" alt="image-20220219230229332"></p>
+<p>这是使用restAPI进行sql查询的处理过程，核心是DruidPlaner使用calcites进行SQL的解释和转化生成原生的json解析。中间会经过parse、validate、rel、planWithDruidConvention四个阶段：<br>parse: 进行分词、词法分析并生成抽象语法树（AST），这是一个比较原始，没有经过优化的语法树；编写的语法文件也是在这里生效进行解析。<br>validate: 利用Druid提供的元数据和语法规则进行语法检查。<br>rel: 主要进行语法分析，目的是将第一步parse生成的sqlnode表示语法树转化为relnode表示的语法树，以便进行关系代数的运算，可以理解成是一个逻辑执行计划。<br>planWithDruidConvention：利用calcites的优化器（HepPlaner或VolcanoPlaner）、元数据和配置的RelOptRule对第三步生成的语法树进行优化，生成DruidRel对象，该DruidRel可通过runQuery方法执行真正的查询。</p>
+<h6 id="如何扩展和新增自定义sql函数"><a href="#如何扩展和新增自定义sql函数" class="headerlink" title="如何扩展和新增自定义sql函数"></a>如何扩展和新增自定义sql函数</h6><p>​    本节介绍如何给druid新增一个函数。以增加一个BITMAP_DISTINCT的聚合函数为例。<br>​    在io.druid.sql.calcite.aggregation.builtin包中新增一个实现了SqlAggregator接口的BitmapUniqueSqlAggregator类<br>在该类的calciteFunction()方法中返回一个SqlAggFunction实例，代码示例如下：</p>
+<figure class="highlight java"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br></pre></td><td class="code"><pre><span class="line"><span class="meta">@Override</span></span><br><span class="line"><span class="function"><span class="keyword">public</span> SqlAggFunction <span class="title">calciteFunction</span><span class="params">()</span></span></span><br><span class="line"><span class="function"></span>&#123;</span><br><span class="line">   <span class="comment">//也可以使用单例</span></span><br><span class="line">  <span class="keyword">return</span> <span class="keyword">new</span> SqlAggFunction(            </span><br><span class="line">          <span class="string">&quot;BITMAP_DISTINCT&quot;</span>,      <span class="comment">//函数名</span></span><br><span class="line">          <span class="keyword">null</span>,            </span><br><span class="line">          SqlKind.OTHER_FUNCTION,     <span class="comment">//函数类型</span></span><br><span class="line">          ReturnTypes.explicit(SqlTypeName.BIGINT),    <span class="comment">//函数返回类型</span></span><br><span class="line">          InferTypes.VARCHAR_1024,   <span class="comment">//函数输入类型</span></span><br><span class="line">          OperandTypes.ANY,          <span class="comment">//函数类型检查</span></span><br><span class="line">          SqlFunctionCategory.STRING,  </span><br><span class="line">          <span class="keyword">false</span>,</span><br><span class="line">          <span class="keyword">false</span>)</span><br><span class="line">  &#123;</span><br><span class="line">    </span><br><span class="line">  &#125;;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<ul>
+<li>在toDruidAggregation()方法中根据入参构造LuceneAggregatorFactory，在本例中将构建BitmapUniqueAggregatorFactory，代码如下：</li>
+</ul>
+<figure class="highlight java"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br><span class="line">33</span><br><span class="line">34</span><br><span class="line">35</span><br><span class="line">36</span><br><span class="line">37</span><br><span class="line">38</span><br><span class="line">39</span><br><span class="line">40</span><br><span class="line">41</span><br><span class="line">42</span><br><span class="line">43</span><br><span class="line">44</span><br><span class="line">45</span><br><span class="line">46</span><br><span class="line">47</span><br><span class="line">48</span><br><span class="line">49</span><br><span class="line">50</span><br><span class="line">51</span><br><span class="line">52</span><br><span class="line">53</span><br><span class="line">54</span><br></pre></td><td class="code"><pre><span class="line"><span class="meta">@Override</span></span><br><span class="line"> <span class="function"><span class="keyword">public</span> Aggregation <span class="title">toDruidAggregation</span><span class="params">(</span></span></span><br><span class="line"><span class="params"><span class="function">         PlannerContext plannerContext,</span></span></span><br><span class="line"><span class="params"><span class="function">         RowSignature rowSignature,</span></span></span><br><span class="line"><span class="params"><span class="function">         VirtualColumnRegistry virtualColumnRegistry,</span></span></span><br><span class="line"><span class="params"><span class="function">         RexBuilder rexBuilder,</span></span></span><br><span class="line"><span class="params"><span class="function">         String name,</span></span></span><br><span class="line"><span class="params"><span class="function">         AggregateCall aggregateCall,</span></span></span><br><span class="line"><span class="params"><span class="function">         Project project,</span></span></span><br><span class="line"><span class="params"><span class="function">         List&lt;Aggregation&gt; existingAggregations,</span></span></span><br><span class="line"><span class="params"><span class="function">         <span class="keyword">boolean</span> finalizeAggregations</span></span></span><br><span class="line"><span class="params"><span class="function"> )</span></span>&#123;</span><br><span class="line">   <span class="keyword">final</span> RexNode columnRexNode = Expressions.fromFieldAccess(</span><br><span class="line">           rowSignature,</span><br><span class="line">           project,</span><br><span class="line">           aggregateCall.getArgList().get(<span class="number">0</span>)</span><br><span class="line">   );</span><br><span class="line">   <span class="keyword">final</span> DruidExpression columnArg = Expressions.toDruidExpression(plannerContext, rowSignature, columnRexNode);</span><br><span class="line">   <span class="keyword">if</span> (columnArg == <span class="keyword">null</span>) &#123;</span><br><span class="line">     <span class="keyword">return</span> <span class="keyword">null</span>;</span><br><span class="line">   &#125;</span><br><span class="line">   <span class="keyword">final</span> String fieldName;</span><br><span class="line">   <span class="keyword">final</span> String expression;</span><br><span class="line">   <span class="comment">//获取函数第一个输入参数作为聚合维度</span></span><br><span class="line">   <span class="keyword">if</span> (columnArg.isDirectColumnAccess()) &#123;</span><br><span class="line">     fieldName = columnArg.getDirectColumn();</span><br><span class="line">     expression = <span class="keyword">null</span>;</span><br><span class="line">   &#125; <span class="keyword">else</span> &#123;</span><br><span class="line">     fieldName = <span class="keyword">null</span>;</span><br><span class="line">     expression = columnArg.getExpression();</span><br><span class="line">   &#125;</span><br><span class="line"></span><br><span class="line">   Integer maxCardinality = <span class="keyword">null</span>;</span><br><span class="line">   <span class="comment">//获取函数第二个输入参数作为优化参数</span></span><br><span class="line">   <span class="keyword">if</span> (aggregateCall.getArgList().size() &gt;= <span class="number">2</span>) &#123;</span><br><span class="line">     <span class="keyword">final</span> RexNode sketchSizeArg = Expressions.fromFieldAccess(</span><br><span class="line">             rowSignature,</span><br><span class="line">             project,</span><br><span class="line">             aggregateCall.getArgList().get(<span class="number">1</span>)</span><br><span class="line">     );</span><br><span class="line"></span><br><span class="line">     <span class="keyword">if</span> (!sketchSizeArg.isA(SqlKind.LITERAL)) &#123;</span><br><span class="line">       <span class="comment">// the second parameter must be a literal in order to plan.</span></span><br><span class="line">       <span class="keyword">return</span> <span class="keyword">null</span>;</span><br><span class="line">     &#125; <span class="keyword">else</span> &#123;</span><br><span class="line">       maxCardinality = ((Number) RexLiteral.value(sketchSizeArg)).intValue();  </span><br><span class="line">     &#125;</span><br><span class="line">     </span><br><span class="line">   &#125;</span><br><span class="line">   <span class="comment">//构造原生的聚合器</span></span><br><span class="line">   BitmapUniqueAggregatorFactory factory = <span class="keyword">new</span> BitmapUniqueAggregatorFactory(name, fieldName, expression, maxCardinality, plannerContext.getExprMacroTable());</span><br><span class="line">   <span class="keyword">return</span> Aggregation.create(factory);</span><br><span class="line">   </span><br><span class="line"> &#125;</span><br></pre></td></tr></table></figure>
+
+<ul>
+<li>在DruidOperatorTable中注册相应的类，代码如下：</li>
+</ul>
+<figure class="highlight java"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br></pre></td><td class="code"><pre><span class="line"> <span class="keyword">private</span> <span class="keyword">static</span> <span class="keyword">final</span> List&lt;SqlAggregator&gt; STANDARD_AGGREGATORS =</span><br><span class="line">      ImmutableList.&lt;SqlAggregator&gt;builder()</span><br><span class="line">          .add(<span class="keyword">new</span> ApproxCountDistinctSqlAggregator())</span><br><span class="line">          .add(<span class="keyword">new</span> AvgSqlAggregator())</span><br><span class="line">          .add(<span class="keyword">new</span> CountSqlAggregator())</span><br><span class="line">          .add(EarliestLatestAnySqlAggregator.EARLIEST)</span><br><span class="line">          .add(EarliestLatestAnySqlAggregator.LATEST)</span><br><span class="line"><span class="comment">//          .add(EarliestLatestAnySqlAggregator.ANY_VALUE)</span></span><br><span class="line">          .add(<span class="keyword">new</span> MinSqlAggregator())</span><br><span class="line">          .add(<span class="keyword">new</span> MaxSqlAggregator())</span><br><span class="line">          .add(<span class="keyword">new</span> SumSqlAggregator())</span><br><span class="line">          .add(<span class="keyword">new</span> SumZeroSqlAggregator())</span><br><span class="line">          .add(<span class="keyword">new</span> ThetaSketchApproxCountDistinctSqlAggregator())</span><br><span class="line">          .add(<span class="keyword">new</span> ThetaSketchObjectSqlAggregator())</span><br><span class="line">          .add(<span class="keyword">new</span> BitmapUniqueSqlAggregator())</span><br><span class="line">          .build();</span><br></pre></td></tr></table></figure>
+
+<h5 id="join处理"><a href="#join处理" class="headerlink" title="join处理"></a>join处理</h5><p>join的详细设计可以参考社区的proposal:</p>
+<p><a target="_blank" rel="noopener" href="https://gist.github.com/gianm/39548daef74f0373b3c87056e3db4627">https://gist.github.com/gianm/39548daef74f0373b3c87056e3db4627</a></p>
+<p>总体而言，druid由于使用的是scatter-gather查询模型，目前druid会把join转化为子查询。</p>
+<p>以 select * from A join B 为例，在druid中会转化为select * from A join (select * from B)。该查询的处理流程如下：</p>
+<p><img src="/2022/02/19/druid%E4%B8%ADsql%E6%A8%A1%E5%9D%97%E5%88%86%E6%9E%90/image-20220219230553212.png" alt="image-20220219230553212"></p>
+<h6 id="broker端流程"><a href="#broker端流程" class="headerlink" title="broker端流程"></a>broker端流程</h6><p>druid的join需要先经过broker节点，把维表的数据全部查询出来放置到内存中，转化为InlineDataSource,然后再广播到主表进行Join查询。因为需要用到druid的内存保存维表的数据，所以维表数据量不能太大，一般不建议超过10万。</p>
+<p>join在broker节点的时序图如下：</p>
+<p><img src="/2022/02/19/druid%E4%B8%ADsql%E6%A8%A1%E5%9D%97%E5%88%86%E6%9E%90/image-20220219230615548.png" alt="image-20220219230615548"></p>
+<p>​    关键逻辑是在ClientQuerySegmentWalker的inlineIfNecessary方法，该方法主要是进行维表的子查询并构建InlineDataSource,以便进行join过滤。</p>
+<h6 id="His端流程"><a href="#His端流程" class="headerlink" title="His端流程"></a>His端流程</h6><p>druid的join在historical节点主要是将broker端生成InlineDataSource转化为RowBasedIndexedTable，然后在HashJoinEngine构建JoinMatcher对主表进行过滤。</p>
+<p>基本原理是将RowBasedIndexedTable的内存数据根据Join条件构建IndexedTableJoinMatcher，根据matchCondition方法判定是否满足连接条件。判定方式是提前将维表数据转化为一个Map，然后利用主表的数据进行key过滤，得到维表的docId。</p>
+<p><img src="/2022/02/19/druid%E4%B8%ADsql%E6%A8%A1%E5%9D%97%E5%88%86%E6%9E%90/image-20220219230644478.png" alt="image-20220219230644478"></p>
+<p>时序图中以TimeseriesQuery查询作为例子，其他类型的查询差别不大。</p>
+
+      
+    </div>
+    <footer class="article-footer">
+      <a data-url="http://example.com/2022/02/19/druid%E4%B8%ADsql%E6%A8%A1%E5%9D%97%E5%88%86%E6%9E%90/" data-id="ckztz6e6b0001mi792ist3y18" data-title="druid中sql模块分析" class="article-share-link">Share</a>
+      
+      
+      
+  <ul class="article-tag-list" itemprop="keywords"><li class="article-tag-list-item"><a class="article-tag-list-link" href="/tags/druid/" rel="tag">druid</a></li></ul>
+
+    </footer>
+  </div>
+  
+</article>
+
+
+
+  
+    <article id="post-druid中发布卸载segment和服务源码解析" class="h-entry article article-type-post" itemprop="blogPost" itemscope itemtype="https://schema.org/BlogPosting">
+  <div class="article-meta">
+    <a href="/2022/02/19/druid%E4%B8%AD%E5%8F%91%E5%B8%83%E5%8D%B8%E8%BD%BDsegment%E5%92%8C%E6%9C%8D%E5%8A%A1%E6%BA%90%E7%A0%81%E8%A7%A3%E6%9E%90/" class="article-date">
+  <time class="dt-published" datetime="2022-02-19T14:47:52.000Z" itemprop="datePublished">2022-02-19</time>
+</a>
+    
+  </div>
+  <div class="article-inner">
+    
+    
+      <header class="article-header">
+        
+  
+    <h1 itemprop="name">
+      <a class="p-name article-title" href="/2022/02/19/druid%E4%B8%AD%E5%8F%91%E5%B8%83%E5%8D%B8%E8%BD%BDsegment%E5%92%8C%E6%9C%8D%E5%8A%A1%E6%BA%90%E7%A0%81%E8%A7%A3%E6%9E%90/">druid中发布卸载segment和服务源码解析</a>
+    </h1>
+  
+
+      </header>
+    
+    <div class="e-content article-entry" itemprop="articleBody">
+      
+        <h4 id="整体概述"><a href="#整体概述" class="headerlink" title="整体概述"></a>整体概述</h4><p>在druid中通过zk管理发布对应的segment发布，以及相关服务的发布，主备选举。druid完成数据摄入会通过zk发布对应的segment，相关服务启动也会通过zk发布自己。</p>
+<h5 id="Announcer解析"><a href="#Announcer解析" class="headerlink" title="Announcer解析"></a>Announcer解析</h5><p>Announcer在druid中负责管理发布与卸载相关事件在zookeeper上。</p>
+<h6 id="初始化Announcer"><a href="#初始化Announcer" class="headerlink" title="初始化Announcer"></a>初始化Announcer</h6><p>Announcer通过在AnnouncerModule中进行配置，Announcer拥有start和stop方法。伴随着Announcer的启动和停止。</p>
+<p><img src="/2022/02/19/druid%E4%B8%AD%E5%8F%91%E5%B8%83%E5%8D%B8%E8%BD%BDsegment%E5%92%8C%E6%9C%8D%E5%8A%A1%E6%BA%90%E7%A0%81%E8%A7%A3%E6%9E%90/image-20220219224907183.png" alt="image-20220219224907183"></p>
+<p>他的成员变量如上所示<br>①　curator是用于操作zk的客户端<br>②　factory是创建zk路径上缓存实体，可用于监听zk目录删除创建变更等动作<br>③　toAnnounce表示待发布的实例（在druid表示Segment和ServerRunner）<br>④　toUpdate表示待更新的实例信息<br>⑤　listeners存放zk路径对应的缓存实体<br>⑥　announcements保存发布的实例的zk路径以及其子路径下叶子节点中存放的数据<br>⑦　parentsIBuilt存放已经使用的路径</p>
+<h6 id="start方法解析"><a href="#start方法解析" class="headerlink" title="start方法解析"></a>start方法解析</h6><p>start方法会将toAnnounce集合中的所有待发布的实例通过announce方法进行发布，announce会将当前实例写入到对应的zk的path下完成发布。<br>announce方法步骤如下：</p>
+<ol>
+<li>首先判断当前状态是否为start状态，如果是非start状态则添加到toAnnounce中直接结束方法</li>
+<li>判断announcements中path是否已经存在，不存在则添加</li>
+<li>创建对zk节点的listeners，管理新增删除更新时候对Announcer中的元数据进行一个修改</li>
+</ol>
+<h6 id="stop方法解析"><a href="#stop方法解析" class="headerlink" title="stop方法解析"></a>stop方法解析</h6><p><img src="/2022/02/19/druid%E4%B8%AD%E5%8F%91%E5%B8%83%E5%8D%B8%E8%BD%BDsegment%E5%92%8C%E6%9C%8D%E5%8A%A1%E6%BA%90%E7%A0%81%E8%A7%A3%E6%9E%90/image-20220219225005776.png" alt="image-20220219225005776"></p>
+<p>跟start方法类似，也是判断当前启动的状态，然后将发布的段进行一个卸载，卸载操作在unannounce方法中，这里不做详细说明</p>
+<h5 id="Druid数据段（segmenmt）管理"><a href="#Druid数据段（segmenmt）管理" class="headerlink" title="Druid数据段（segmenmt）管理"></a>Druid数据段（segmenmt）管理</h5><p>​    本节将解析druid如何管理数据段，在druid中，所有的段需要在被发布之后才能被查询，本节将解析段的发布流程。</p>
+<p>druid中，段的发布与卸载是通过zookeeper来协调的，当一个新的段需要发布的时候，将这个段的信息，发送到zookeeper中的指定节点中，broker会监听这个节点，当节点发生变化时候，broker能收到信息，将新发布的段信息加载到内存中，整个段的发布就算完成。</p>
+<h6 id="段的发布"><a href="#段的发布" class="headerlink" title="段的发布"></a>段的发布</h6><p>负责段发布的接口为DataSegmentAnnouncer，接口如下：</p>
+<p><img src="/2022/02/19/druid%E4%B8%AD%E5%8F%91%E5%B8%83%E5%8D%B8%E8%BD%BDsegment%E5%92%8C%E6%9C%8D%E5%8A%A1%E6%BA%90%E7%A0%81%E8%A7%A3%E6%9E%90/image-20220219225101647.png" alt="image-20220219225101647"></p>
+<p>四个接口分别是发布一个段，卸载一个段，发布多个段和卸载多个段，在druid中BatchDataSegmentAnnouncer实现了DataSegmentAnnouncer接口，在BatchDataSegmentAnnouncer中他实现了announceSegment方法流程如下：</p>
+<ol>
+<li>判断segmentLookup中是否已经包含了这个段了，如果包含了直接跳过，不发布。</li>
+<li>往ChangeRequestHistory中添加本次段的一个变更请求</li>
+<li>判断是否跳过将段发布到zk中，如果跳过直接将段添加到segmentLookup集合当中</li>
+<li>将段对象序列化，并且判断是否超过了最大长度限制</li>
+<li>判断当前zk节点是否为空，不为空直接往zk节点中发布当前段，如果为空则需要初始化zk节点并且发布</li>
+<li>发布流程：遍历所有可用的zk节点，判断节点容量是否满载，未满载将段发布到节点中，满载则初始化一个新的节点用于数据段发布，并且将当前zk节点从可用zk节点集合中移出，发布的流程代码通过调用addSegment方法将segment对象插入到集合中并且序列化为二进制数据在调用Announcer.update更新zk节点数据，达到发布段的效果<br>所有的数据段都是要通过发布之后才能被查询到，当druid启动或者有新的数据接入的时候，都会将数据段发布。zeekeeper节点信息如下所示：</li>
+</ol>
+<p><img src="/2022/02/19/druid%E4%B8%AD%E5%8F%91%E5%B8%83%E5%8D%B8%E8%BD%BDsegment%E5%92%8C%E6%9C%8D%E5%8A%A1%E6%BA%90%E7%A0%81%E8%A7%A3%E6%9E%90/image-20220219225125474.png" alt="image-20220219225125474"></p>
+<p>​    在broker端，会通过BatchServerInventoryView这个类来监听zk节点，并且实时的更新段的信息,这些信息存储在serverInventoryView对象以及timelineServerView，serverInventoryView详细的监听逻辑在AbstractCuratorServerInventoryView的构造方法中，方法中会构造一个inventoryManager对象，这对象是对zkcuratorFramework的一个封装，具体不做详细的说明，在broker启动的时候就会启动这个加载serverInventoryView对zk节点进行监听，实时更新segment数据到内存中。其中封装成的对象为DruidServer，代表每个his或者实时节点实例，成员变量如下：</p>
+<p><img src="/2022/02/19/druid%E4%B8%AD%E5%8F%91%E5%B8%83%E5%8D%B8%E8%BD%BDsegment%E5%92%8C%E6%9C%8D%E5%8A%A1%E6%BA%90%E7%A0%81%E8%A7%A3%E6%9E%90/image-20220219225139504.png" alt="image-20220219225139504"></p>
+<p>一个DruidServer中包含了dataSources集合和segments以及相关的metadata信息，broker维护一个DruidServer内存集合来保存这些信息。</p>
+<h4 id="相关段数据信息在druid中的应用"><a href="#相关段数据信息在druid中的应用" class="headerlink" title="相关段数据信息在druid中的应用"></a>相关段数据信息在druid中的应用</h4><h5 id="broker接受查询判断interval属于哪一个段"><a href="#broker接受查询判断interval属于哪一个段" class="headerlink" title="broker接受查询判断interval属于哪一个段"></a>broker接受查询判断interval属于哪一个段</h5><p>在broker接受查询请求进行查询时会根据这些段的信息来判定请求将会发送到哪一台服务上去，会通过TimelineServerView来操作，其中在broker端的实现类为BrokerServerView，在初始化的时候会绑定一些回调函数，对应处理段发布，段卸载等操作时的处理，例如：当出现段发布的时候会触发的操作代码如下：</p>
+<p><img src="/2022/02/19/druid%E4%B8%AD%E5%8F%91%E5%B8%83%E5%8D%B8%E8%BD%BDsegment%E5%92%8C%E6%9C%8D%E5%8A%A1%E6%BA%90%E7%A0%81%E8%A7%A3%E6%9E%90/image-20220219225227270.png" alt="image-20220219225227270"></p>
+<p>在这里面每个数据源发布，都会被封装成一个VersionedIntervalTimeline对象，这个对象维护了这个段中的所有segment信息，在broker端接受请求的时候会通过TimelineServerView来拿到这些信息，最终决定将请求发送到哪一台机器计算。</p>
+<h5 id="段的卸载"><a href="#段的卸载" class="headerlink" title="段的卸载"></a>段的卸载</h5><p>段卸载和段加载方法类似：</p>
+<p><img src="/2022/02/19/druid%E4%B8%AD%E5%8F%91%E5%B8%83%E5%8D%B8%E8%BD%BDsegment%E5%92%8C%E6%9C%8D%E5%8A%A1%E6%BA%90%E7%A0%81%E8%A7%A3%E6%9E%90/image-20220219225253737.png" alt="image-20220219225253737"></p>
+<p>就是把段发布的流程反来了一遍，比较容易理解，这里不做详细概述了。</p>
+<h4 id="druid服务发布卸载"><a href="#druid服务发布卸载" class="headerlink" title="druid服务发布卸载"></a>druid服务发布卸载</h4><h5 id="简介"><a href="#简介" class="headerlink" title="简介"></a>简介</h5><p>​    druid中各个服务组件都需要发布才能被使用，所有的这些组件都继承于ServerRunnable抽象类，在启动的时候会调用start方法将自己发布可用，通过调用DruidNodeAnnouncer的announce方法发布。其中DruidNodeAnnouncer只有一个唯一的继承类为CuratorDruidNodeAnnouncer，druid通过zk来协调管理各个服务状态，当节点发布时，会将自己信息绑定到zk中，从而使得其他节点能够发现自己。</p>
+<h5 id="服务发布"><a href="#服务发布" class="headerlink" title="服务发布"></a>服务发布</h5><p>ServerRunnable是一个接口他的实现类如下所示：</p>
+<p><img src="/2022/02/19/druid%E4%B8%AD%E5%8F%91%E5%B8%83%E5%8D%B8%E8%BD%BDsegment%E5%92%8C%E6%9C%8D%E5%8A%A1%E6%BA%90%E7%A0%81%E8%A7%A3%E6%9E%90/image-20220219225356732.png" alt="image-20220219225356732"></p>
+<p>可见druid中的各个组件都继承了ServerRunnable，在ServerRunnable中存在一个静态内部类DiscoverySideEffectsProvider，他帮助CliXXX 类发布。他包括以下成员变量：</p>
+<p><img src="/2022/02/19/druid%E4%B8%AD%E5%8F%91%E5%B8%83%E5%8D%B8%E8%BD%BDsegment%E5%92%8C%E6%9C%8D%E5%8A%A1%E6%BA%90%E7%A0%81%E8%A7%A3%E6%9E%90/image-20220219225405482.png" alt="image-20220219225405482"></p>
+<ul>
+<li>druidNode中包含了当前节点信息包括servicename、host等</li>
+<li>announcer用于发布和卸载节点</li>
+<li>legacyAnnouncer旧版本用于发布节点的Announcer</li>
+<li>nodeRoles:当前集群中启用的角色集合</li>
+<li>serviceClasses：存放NodeRole和他对应的class集合</li>
+</ul>
+<p>具体的发布卸载逻辑如下：</p>
+<p><img src="/2022/02/19/druid%E4%B8%AD%E5%8F%91%E5%B8%83%E5%8D%B8%E8%BD%BDsegment%E5%92%8C%E6%9C%8D%E5%8A%A1%E6%BA%90%E7%A0%81%E8%A7%A3%E6%9E%90/image-20220219225431507.png" alt="image-20220219225431507"></p>
+<p>在服务启动和停止时候都会调用announce来发布或者unannounce来卸载节点。</p>
+<h6 id="主从选举"><a href="#主从选举" class="headerlink" title="主从选举"></a>主从选举</h6><p>​    在druid中coordinate和overload节点都遵循一主多从的架构模型，通过DruidLeaderSelector接口制定规范：</p>
+<p><img src="/2022/02/19/druid%E4%B8%AD%E5%8F%91%E5%B8%83%E5%8D%B8%E8%BD%BDsegment%E5%92%8C%E6%9C%8D%E5%8A%A1%E6%BA%90%E7%A0%81%E8%A7%A3%E6%9E%90/image-20220219225501636.png" alt="image-20220219225501636"></p>
+<ul>
+<li>getCurrentLeader：获取当前leader的id，如果没找找到leader则返回null</li>
+<li>isLeader：判断当前服务是否为leader</li>
+<li>localTerm：获取当前term值，每一次成为leader时term值都会+1</li>
+<li>registerListener：注册listener</li>
+<li>unregisterListener：解除listener</li>
+</ul>
+<p>在druid中实现为CuratorDruidLeaderSelector，借助zk来实现主从选举，具体代码不做详细阐述了。</p>
+
+      
+    </div>
+    <footer class="article-footer">
+      <a data-url="http://example.com/2022/02/19/druid%E4%B8%AD%E5%8F%91%E5%B8%83%E5%8D%B8%E8%BD%BDsegment%E5%92%8C%E6%9C%8D%E5%8A%A1%E6%BA%90%E7%A0%81%E8%A7%A3%E6%9E%90/" data-id="ckztz9ely0000e979h3sr53ki" data-title="druid中发布卸载segment和服务源码解析" class="article-share-link">Share</a>
+      
+      
+      
+  <ul class="article-tag-list" itemprop="keywords"><li class="article-tag-list-item"><a class="article-tag-list-link" href="/tags/druid/" rel="tag">druid</a></li></ul>
+
+    </footer>
+  </div>
+  
+</article>
+
+
+
+  
+    <article id="post-druid中聚合函数实现源码解析" class="h-entry article article-type-post" itemprop="blogPost" itemscope itemtype="https://schema.org/BlogPosting">
+  <div class="article-meta">
+    <a href="/2022/02/19/druid%E4%B8%AD%E8%81%9A%E5%90%88%E5%87%BD%E6%95%B0%E5%AE%9E%E7%8E%B0%E6%BA%90%E7%A0%81%E8%A7%A3%E6%9E%90/" class="article-date">
+  <time class="dt-published" datetime="2022-02-19T14:43:47.000Z" itemprop="datePublished">2022-02-19</time>
+</a>
+    
+  </div>
+  <div class="article-inner">
+    
+    
+      <header class="article-header">
+        
+  
+    <h1 itemprop="name">
+      <a class="p-name article-title" href="/2022/02/19/druid%E4%B8%AD%E8%81%9A%E5%90%88%E5%87%BD%E6%95%B0%E5%AE%9E%E7%8E%B0%E6%BA%90%E7%A0%81%E8%A7%A3%E6%9E%90/">druid中聚合函数实现源码解析</a>
+    </h1>
+  
+
+      </header>
+    
+    <div class="e-content article-entry" itemprop="articleBody">
+      
+        <h4 id="整体概述"><a href="#整体概述" class="headerlink" title="整体概述"></a>整体概述</h4><p>​    可以在摄取时提供聚合，作为摄取规范的一部分，作为在数据进入tindex之前汇总数据的一种方式。也可以在查询时将聚合指定为许多查询的一部分。</p>
+<p>​    tindex中包含多种aggregator，如下：</p>
+<ul>
+<li>Count aggregator</li>
+<li>Sum aggregators</li>
+<li>Min / Max aggregators</li>
+<li>First / Last aggregator</li>
+<li>ANY aggregator</li>
+<li>JavaScript aggregator</li>
+<li>Approximate Aggregations</li>
+</ul>
+<p>下图列举了date 和long类型的两个minmax为例展示相关聚合函数的类继承关系</p>
+<p><img src="/2022/02/19/druid%E4%B8%AD%E8%81%9A%E5%90%88%E5%87%BD%E6%95%B0%E5%AE%9E%E7%8E%B0%E6%BA%90%E7%A0%81%E8%A7%A3%E6%9E%90/image-20220219224447820.png" alt="image-20220219224447820"></p>
+<p>在druid中聚合函数，都是继承于Aggregator，对应的聚合函数实现分为堆外和堆内两种，现在详细解释这两种实现的具体逻辑。</p>
+<p>其中这两种实现类都是由AggregatorFactory创建而来，每一个聚合函数有堆内和堆外两种实现，都是由AggregatorFactory创建而来</p>
+<p>​    其中factorizeBuffered和factorize分别是创建堆外操作的聚合器和堆内操作的聚合器。下面通过对DoubleSumAggregator进行一个解析来看看聚合函数的实现方式。</p>
+<p>重要方法如下：<br>deserialize: 将输入的数据反序列化成当前聚合函数可操作的对象类型，例如在此处就会将String类型转化为double<br>getType: 返回当前的聚合查询返回的类型，例如DoubleSum这种聚合查询类型将返回ValueType.DOUBLE<br>getFinalizedType：表示最终的返回类型，在某些复杂查询中有序列化和反序列化的过程，需要这个方法确定最终的返回结果是什么类型。<br>getMaxIntermediateSize: 这个方法用于需要保存的值所需要的缓存空间大小（用于堆外申请空间），比如在sumDouble中,整个流程是对输入的数值做累加，所以始终只需要一个64bit的空间来做数据存储，所以可以直接返回一个Double.BYTES<br>getComparator: 获取Comparator<br>finalizeComputation：在最终完成之后调用，最终数据的计算，用于某些需要序列化之后再计算的特殊聚合方式，详情可以参考复杂聚合查询。例如：SketchAggregator<br>getMergingFactory:获取聚合AggregatorFactory<br>getCombiningFactory：获取组合的AggregatorFactory，在doublesum中，先并行处理完之后要combine这些结果，逻辑是跟sum一样，所以在sumdouble中还是直接返回的DoubleSumAggregator<br>getCacheKey：获取缓存的key值，会作为缓存结果的key值。<br>接下来对几个aggregator进行一个解析：</p>
+<ul>
+<li>DoubleSumAggregator</li>
+</ul>
+<p><img src="/2022/02/19/druid%E4%B8%AD%E8%81%9A%E5%90%88%E5%87%BD%E6%95%B0%E5%AE%9E%E7%8E%B0%E6%BA%90%E7%A0%81%E8%A7%A3%E6%9E%90/image-20220219224633538.png" alt="image-20220219224633538"></p>
+<p>aggregate方法就是做当前聚合函数的聚合逻辑，例如在DoubleSumAggregator中aggregate就是对每一个值进行一个累加操作，代码如下：</p>
+<p><img src="/2022/02/19/druid%E4%B8%AD%E8%81%9A%E5%90%88%E5%87%BD%E6%95%B0%E5%AE%9E%E7%8E%B0%E6%BA%90%E7%A0%81%E8%A7%A3%E6%9E%90/image-20220219224640515.png" alt="image-20220219224640515"></p>
+<p>还有一些get方法是用于获取聚合完成之后获取结果，基本上在sum聚合过程中，就是递归调用aggregate进行一个值累加最终调用get方法获取累加值，比较简单。同理求max，min等的操作类似。</p>
+<ul>
+<li>DoubleSumBufferAggregator</li>
+</ul>
+<p>DoubleSumBufferAggregator聚合器是通过堆外的方式来对数据进行一个聚合，和DoubleSumAggregator的区别在于他将聚合中间结果存在了堆外。</p>
+<p><img src="/2022/02/19/druid%E4%B8%AD%E8%81%9A%E5%90%88%E5%87%BD%E6%95%B0%E5%AE%9E%E7%8E%B0%E6%BA%90%E7%A0%81%E8%A7%A3%E6%9E%90/image-20220219224702041.png" alt="image-20220219224702041"></p>
+<p>​    整体逻辑类似，将前一次的聚合结果取出，跟本条数据累加，在存放回之前的位置。</p>
+<p>​    通过对doubleSum的解析，基本的Aggregator的逻辑就差不多了，可类比doubleSum去看别的聚合器。同样的也可以根据上述的信息新增一个自定义的聚合器</p>
+
+      
+    </div>
+    <footer class="article-footer">
+      <a data-url="http://example.com/2022/02/19/druid%E4%B8%AD%E8%81%9A%E5%90%88%E5%87%BD%E6%95%B0%E5%AE%9E%E7%8E%B0%E6%BA%90%E7%A0%81%E8%A7%A3%E6%9E%90/" data-id="ckztz6e6b0003mi794klz8pe8" data-title="druid中聚合函数实现源码解析" class="article-share-link">Share</a>
+      
+      
+      
+  <ul class="article-tag-list" itemprop="keywords"><li class="article-tag-list-item"><a class="article-tag-list-link" href="/tags/druid/" rel="tag">druid</a></li></ul>
+
+    </footer>
+  </div>
+  
+</article>
+
+
+
+  
+    <article id="post-druid中ScanQuery查询解析" class="h-entry article article-type-post" itemprop="blogPost" itemscope itemtype="https://schema.org/BlogPosting">
+  <div class="article-meta">
+    <a href="/2022/02/19/druid%E4%B8%ADScanQuery%E6%9F%A5%E8%AF%A2%E8%A7%A3%E6%9E%90/" class="article-date">
+  <time class="dt-published" datetime="2022-02-19T14:39:21.000Z" itemprop="datePublished">2022-02-19</time>
+</a>
+    
+  </div>
+  <div class="article-inner">
+    
+    
+      <header class="article-header">
+        
+  
+    <h1 itemprop="name">
+      <a class="p-name article-title" href="/2022/02/19/druid%E4%B8%ADScanQuery%E6%9F%A5%E8%AF%A2%E8%A7%A3%E6%9E%90/">druid中ScanQuery查询解析</a>
+    </h1>
+  
+
+      </header>
+    
+    <div class="e-content article-entry" itemprop="articleBody">
+      
+        <h4 id="整体概述"><a href="#整体概述" class="headerlink" title="整体概述"></a>整体概述</h4><p>​    从之前broker和his等节点对流程可知，对于所有的查询不同处在于构建的queryRunner不同，queryRunner本身可以看做一个函数，不同的查询类型对应的queryRunner不同，这一节将对其中几个查询类型进行解析，详解各种查询是如何进行的。</p>
+<p><img src="/2022/02/19/druid%E4%B8%ADScanQuery%E6%9F%A5%E8%AF%A2%E8%A7%A3%E6%9E%90/image-20220219223952828.png" alt="image-20220219223952828"></p>
+<p>在his端和realtime端的查询步骤如上图所示，整体处理逻需要关注的三个方法是：</p>
+<ul>
+<li><p>​    QueryFactory.createRunner</p>
+</li>
+<li><p>​    QueryFactory.mergeRunners</p>
+</li>
+<li><p>​    QueryToolChest.mergeResult</p>
+<p>在查询流程当中，会按照先后顺序调用这三个方法，返回broker端之后还会掉用一次QueryToolChest.mergeResult方法将各个节点的结果再进行一次merge。所以下面的代码主要会解析不同查询中这三个方法的执行逻辑。</p>
+</li>
+</ul>
+<p>​    scanQuery用于查询原始明细数据，类似select中直接查询不使用groupby进行聚合。执行过程都是并发的查询各个segment之后再进行合并操作，查询segment的逻辑封装在ScanQueryRunner中，随后这些结果会在mergerunner中合并，scanquery执行相对简单，就是扫描各个segment下的数据返回，但是需要注意的，如果查询不带有排序字段就相对简单，如果查询带有排序会有有别的处理方式。</p>
+<p>​    由于是查询原始的明细数据，ScanQuery不同于其他查询的一点是他会和客户端维持一个长链接，通过这个长链接，客户端可以按批次一批一批的接受数据，防止客户端的内存出现溢出。</p>
+<h4 id="代码解析"><a href="#代码解析" class="headerlink" title="代码解析"></a>代码解析</h4><h5 id="QueryFactory-createRunner"><a href="#QueryFactory-createRunner" class="headerlink" title="QueryFactory.createRunner"></a>QueryFactory.createRunner</h5><p>跟TimeseriesQuery和GroupByQuery一样，先从QueryFactory.createRunner开始，在Scanquery中使用ScanQueryEngine实现这部分逻辑，跟timeseries和groupby一样也会先获取segment的cursor集合，但是不同的是，ScanQuery会维护一个当前客户端已经接受的结果数量，当返回的数量已经达到limit时候。就不计算了：</p>
+<p><img src="/2022/02/19/druid%E4%B8%ADScanQuery%E6%9F%A5%E8%AF%A2%E8%A7%A3%E6%9E%90/image-20220219224114779.png" alt="image-20220219224114779"></p>
+<p>具体逻辑如下：</p>
+<ol>
+<li>看当前是否已经查询完毕，比如limit10 ，目前已经是第十一条了，就直接返回空。</li>
+<li>验证当前segment是否可以跳过</li>
+<li>构建需要查询的字段列表,limit 排序相关信息</li>
+<li>构建unsortedRes对象，这是一个Sequence<ScanResultValue>对象，具体的逻辑在重写的方法中，主要是对数据进行明细查询，主要逻辑如下：</li>
+</ol>
+<p><img src="/2022/02/19/druid%E4%B8%ADScanQuery%E6%9F%A5%E8%AF%A2%E8%A7%A3%E6%9E%90/image-20220219224129258.png" alt="image-20220219224129258"></p>
+<h5 id="QueryFactory-mergeRunners"><a href="#QueryFactory-mergeRunners" class="headerlink" title="QueryFactory.mergeRunners"></a>QueryFactory.mergeRunners</h5><p>在ScanQuery中，由于是查询明细数据，所以并不存在说需要聚合的操作，mergeRunners方法主要是处理需要排序的情况，他的处理逻辑如下：</p>
+<ol>
+<li><p>先构建查询timeout值</p>
+</li>
+<li><p>判断查询是否排序，如果不排序，则直接调用<br>return returnedRows.limit(Math.toIntExact(query.getScanRowsLimit()))返回就好。</p>
+</li>
+<li><p>如果排序，获取排序缓冲区可支持的排序元素个数大小,可以通过配置相关参数druid.lucene.query.scan.maxRowsQueuedForOrdering配置，默认最大支持100000个。</p>
+</li>
+<li><p>如果当前查询的limit&lt;maxRowsQueuedForOrdering,使用优先级队列MinMaxPriorityQueue来排序，否则使用多路归并排序。<br>下面对两种排序的具体逻辑进行一个解析：</p>
+</li>
+<li><p>当使用排序缓冲区进行排序：<br>具体实现方法为ScanQueryRunnerFactory.stableLimitingSort方法，调用这个方法之前会时间将interval和queryRunner进行一个排序</p>
+</li>
+</ol>
+<p>  <img src="/2022/02/19/druid%E4%B8%ADScanQuery%E6%9F%A5%E8%AF%A2%E8%A7%A3%E6%9E%90/image-20220219224208181.png" alt="image-20220219224208181"></p>
+<p>随后stableLimitingSort方法中的入参为：</p>
+<p><img src="/2022/02/19/druid%E4%B8%ADScanQuery%E6%9F%A5%E8%AF%A2%E8%A7%A3%E6%9E%90/image-20220219224217046.png" alt="image-20220219224217046"></p>
+<p>inputSequcene是queryRunner执行结果，scanQuery是查询体，intervalsOrdered是经过排序之后的interval集合，下面看stableLimitingSort方法具体实现：</p>
+<p>首先通过scanQuery.getResultOrdering()方法获取当前查询的Comparator，封装了两条结果的比较逻辑</p>
+<p>然后获取limit信息，构建StableLimitingSorter对象，StableLimitingSorter中维护了一个MinMaxPriorityQueue对象用于保存和对结果进行排序，</p>
+<p>最后遍历inputSequence对象，并且记录当前遍历出来的元素个数判断是否超过limit，如果没有超过limit限制则调用StableLimitingSorter.add方法将结果添加到MinMaxPriorityQueue中并且继续遍历inputSequence，如果已经超过limit限制，则直接结束遍历，并且调用StableLimitingSorter.drain方法将排序完成的结果提取返回。</p>
+<p>​        2.使用多路归并的方式</p>
+<p>​    首先会构建一个intervalsAndRunnersOrdered，包含了所有的Interval和其对应的queryRunner，其中Interval对象其实是从segment转化而来，有多少个segment就会有多少个interval，所以interval具体值可能会重复。</p>
+<p><img src="/2022/02/19/druid%E4%B8%ADScanQuery%E6%9F%A5%E8%AF%A2%E8%A7%A3%E6%9E%90/image-20220219224257653.png" alt="image-20220219224257653"></p>
+<p>​    然后根据interval的值将intervalsAndRunnersOrdered进行一个分组，一个根据interval进行分组的map，然后取出所有interval中segment数量的最大值，表示了interval中存在最多的segment的数量，判断这个值是否超过了配置maxSegmentPartitionsOrderedInMemory（默认为50 ），如果超过了这个值将会抛出异常，也就是说在多路归并排序这个规则下，不允许同一个interval中出现过多的segment（可能是为了性能考虑）,也可以通过在查询json的context中配置maxSegmentPartitionsOrderedInMemory参数自行设置这个值大小。如果前面条件都满足就会调用ScanQueryRunnerFactory.nWayMergeAndLimit方法进行排序，这里不做详细解析。</p>
+<h5 id="QueryFactoryToolChest-mergeResults"><a href="#QueryFactoryToolChest-mergeResults" class="headerlink" title="QueryFactoryToolChest.mergeResults"></a>QueryFactoryToolChest.mergeResults</h5><p>​    ScanQuery查询的mergeResults方法基本不会再做具体的操作就是将之前的结果进行处理返回这里不做详细讲解了</p>
+
+      
+    </div>
+    <footer class="article-footer">
+      <a data-url="http://example.com/2022/02/19/druid%E4%B8%ADScanQuery%E6%9F%A5%E8%AF%A2%E8%A7%A3%E6%9E%90/" data-id="ckztz6e690000mi79gff86v5a" data-title="druid中ScanQuery查询解析" class="article-share-link">Share</a>
+      
+      
+      
+  <ul class="article-tag-list" itemprop="keywords"><li class="article-tag-list-item"><a class="article-tag-list-link" href="/tags/druid/" rel="tag">druid</a></li></ul>
+
+    </footer>
+  </div>
+  
+</article>
+
+
+
+  
     <article id="post-druid中GroupbyQuery查询流程解析" class="h-entry article article-type-post" itemprop="blogPost" itemscope itemtype="https://schema.org/BlogPosting">
   <div class="article-meta">
     <a href="/2022/02/19/druid%E4%B8%ADGroupbyQuery%E6%9F%A5%E8%AF%A2%E6%B5%81%E7%A8%8B%E8%A7%A3%E6%9E%90/" class="article-date">
@@ -654,108 +1428,12 @@
 
 
   
-    <article id="post-flink的内存管理机制简单解析" class="h-entry article article-type-post" itemprop="blogPost" itemscope itemtype="https://schema.org/BlogPosting">
-  <div class="article-meta">
-    <a href="/2022/01/29/flink%E7%9A%84%E5%86%85%E5%AD%98%E7%AE%A1%E7%90%86%E6%9C%BA%E5%88%B6%E7%AE%80%E5%8D%95%E8%A7%A3%E6%9E%90/" class="article-date">
-  <time class="dt-published" datetime="2022-01-29T13:33:10.000Z" itemprop="datePublished">2022-01-29</time>
-</a>
+
+
+  <nav id="page-nav">
     
-  </div>
-  <div class="article-inner">
-    
-    
-      <header class="article-header">
-        
-  
-    <h1 itemprop="name">
-      <a class="p-name article-title" href="/2022/01/29/flink%E7%9A%84%E5%86%85%E5%AD%98%E7%AE%A1%E7%90%86%E6%9C%BA%E5%88%B6%E7%AE%80%E5%8D%95%E8%A7%A3%E6%9E%90/">Flink内存管理源码解读</a>
-    </h1>
-  
-
-      </header>
-    
-    <div class="e-content article-entry" itemprop="articleBody">
-      
-        <blockquote>
-<p>flink版本1.13</p>
-</blockquote>
-<pre><code>  在分布式计算引擎中，不管是flink、spark，mr等等使用jvm作为载体实现的框架中，对于整体的内存管理是一个很重要的部分，在大数据量下如何保证合理的使用，稳定的运行是各个框架的重点，本文将探究flink是如何对程序的内存进行一个管理。
-</code></pre>
-<p>从官网可以很直观和的看到flink的内存模型（本文只讲解taskmanager）</p>
-<img src="https://nightlies.apache.org/flink/flink-docs-release-1.13/fig/detailed-mem-model.svg" alt="detailed-mem-model.svg" style="zoom:25%;" />
-
-<p>可见flink在尽可能的尝试使用堆外内存来进行运算，都知道在jvm里面对内存的管理是自动的，在频繁的创建销毁对象的时候，监控分配都不是一件容易的事情，并且在堆类进行过度使用很容易造成oom等异常，所以需要对内存管理这一块进行一个特定的一个管理，而不能完全依靠jvm的内存回收机制。所以从底层上看，flink对内存的管理更像是cpp而不是java。</p>
-<p>flink对内存管理大部分依靠组件<code>MemoryManager</code>，从源码中的注释我们可以得知<code>MemoryManager</code>主要完成的工作，如下：</p>
-<figure class="highlight java"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment">/**</span></span><br><span class="line"><span class="comment"> * The memory manager governs the memory that Flink uses for sorting, hashing, caching or off-heap</span></span><br><span class="line"><span class="comment"> * state backends (e.g. RocksDB). Memory is represented either in&#123;<span class="doctag">@linkMemorySegment</span>&#125;s of equal</span></span><br><span class="line"><span class="comment"> * size or in reserved chunks of certain size. Operators allocate the memory either by requesting a</span></span><br><span class="line"><span class="comment"> * number of memory segments or by reserving chunks. Any allocated memory has to be released to be</span></span><br><span class="line"><span class="comment"> * reused later.</span></span><br><span class="line"><span class="comment"> *</span></span><br><span class="line"><span class="comment"> *&lt;p&gt;The memory segments are represented as off-heap unsafe memory regions (both via&#123;<span class="doctag">@link</span></span></span><br><span class="line"><span class="comment"> *MemorySegment&#125;). Releasing a memory segment will make it re-claimable by the garbage collector,</span></span><br><span class="line"><span class="comment"> * but does not necessarily immediately releases the underlying memory.</span></span><br><span class="line"><span class="comment"> */</span></span><br><span class="line"><span class="keyword">public</span> <span class="class"><span class="keyword">class</span> <span class="title">MemoryManager</span></span>&#123;&#125;</span><br></pre></td></tr></table></figure>
-
-<p>可以得知MemoryManager工作为：</p>
-<blockquote>
-<p>MemoryManager管理Flink用于排序、hash、缓存或堆外状态后端（例如RocksDB）的内存。内存可以用大小相等的{@link MemorySegment}表示，也可以用一定大小的保留块表示。操作员通过请求大量内存段或保留块来分配内存。任何分配的内存都必须释放，以便以后重新使用。</p>
-</blockquote>
-<p>可以看到注释可得，flink对内存的操作非常谨慎，使用者在使用之前需要申请分配内存，使用完成之后必须要手动释放。</p>
-<p><code>MemoryManager</code> 会在taskmanager启动的时候初始化，<code>MemoryManager</code> 数量取决于taskmanager一共有多少个<code>TaskSlot</code> 每一个TaskSlot都会有一个<code>MemoryManager</code>  </p>
-<figure class="highlight java"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br></pre></td><td class="code"><pre><span class="line"><span class="function"><span class="keyword">public</span> <span class="title">TaskSlot</span><span class="params">(</span></span></span><br><span class="line"><span class="params"><span class="function"><span class="keyword">final</span> <span class="keyword">int</span> index,</span></span></span><br><span class="line"><span class="params"><span class="function">        <span class="keyword">final</span> ResourceProfile resourceProfile,</span></span></span><br><span class="line"><span class="params"><span class="function">        <span class="keyword">final</span> <span class="keyword">int</span> memoryPageSize,</span></span></span><br><span class="line"><span class="params"><span class="function">        <span class="keyword">final</span> JobID jobId,</span></span></span><br><span class="line"><span class="params"><span class="function">        <span class="keyword">final</span> AllocationID allocationId,</span></span></span><br><span class="line"><span class="params"><span class="function">        <span class="keyword">final</span> Executor asyncExecutor)</span> </span>&#123;</span><br><span class="line"></span><br><span class="line"><span class="keyword">this</span>.index = index;</span><br><span class="line">    <span class="keyword">this</span>.resourceProfile = Preconditions.checkNotNull(resourceProfile);</span><br><span class="line">    <span class="keyword">this</span>.asyncExecutor = Preconditions.checkNotNull(asyncExecutor);</span><br><span class="line"></span><br><span class="line">    <span class="keyword">this</span>.tasks = <span class="keyword">new</span> HashMap&lt;&gt;(<span class="number">4</span>);</span><br><span class="line">    <span class="keyword">this</span>.state = TaskSlotState.ALLOCATED;</span><br><span class="line"></span><br><span class="line">    <span class="keyword">this</span>.jobId = jobId;</span><br><span class="line">    <span class="keyword">this</span>.allocationId = allocationId;</span><br><span class="line"></span><br><span class="line">    <span class="keyword">this</span>.memoryManager =createMemoryManager(resourceProfile, memoryPageSize);</span><br><span class="line"></span><br><span class="line">    <span class="keyword">this</span>.closingFuture = <span class="keyword">new</span> CompletableFuture&lt;&gt;();</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
-
-<figure class="highlight java"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br></pre></td><td class="code"><pre><span class="line"><span class="function"><span class="keyword">public</span> <span class="keyword">static</span> MemoryManager <span class="title">create</span><span class="params">(<span class="keyword">long</span> memorySize, <span class="keyword">int</span> pageSize)</span> </span>&#123;</span><br><span class="line"><span class="keyword">return</span> <span class="keyword">new</span> MemoryManager(memorySize, pageSize);</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
-
-<p>可以看到创建<code>MemoryManager</code> 会传入两个参数，一个是memorySize一个是pageSize，两个参数分别标识 <code>MemoryManager</code>  所管理的总的memorySize一个是pageSize。其中pageSize默认为32kb。</p>
-<blockquote>
-<p>pageSize是什么？</p>
-</blockquote>
-<p>程序在运行时往操作系统申请内存时，是一个一个page申请的，每一个page的大小是固定的，flink在这里借鉴了这一思想将内存申请也抽象为此，所以<code>MemoryManager</code> 对象中最终要的两个变量就是总内存大小和pageSize（每申请一块内存的大小）</p>
-<p>之前就已经提过了<code>MemoryManager</code> 会申请内存，其实就是申请一块一块pageSize大小的内</p>
-<p>pageSize，flink内部将这个每一块内存抽象为了<code>MemorySegment</code> 对象，<code>MemoryManager</code> 申请内存的方法为</p>
-<figure class="highlight java"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br></pre></td><td class="code"><pre><span class="line"><span class="function"><span class="keyword">public</span> List&lt;MemorySegment&gt; <span class="title">allocatePages</span><span class="params">(Object owner, <span class="keyword">int</span> numPages)</span></span></span><br><span class="line"><span class="function"><span class="keyword">throws</span> MemoryAllocationException</span>&#123;</span><br><span class="line">List&lt;MemorySegment&gt;segments = <span class="keyword">new</span> ArrayList&lt;&gt;(numPages);</span><br><span class="line">    allocatePages(owner, segments, numPages);</span><br><span class="line">    <span class="keyword">return</span> segments;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
-
-<p>其中numPages就是本次申请要申请的segment数量，返回的也是numPages个segment的集合，每一个segment代表的内存大小就是之前的pageSize</p>
-<p>接下来看看<code>MemorySegment</code> 对象</p>
-<figure class="highlight java"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br></pre></td><td class="code"><pre><span class="line"></span><br><span class="line"><span class="meta">@Nullable</span> <span class="keyword">private</span> <span class="keyword">final</span> <span class="keyword">byte</span>[] heapMemory;</span><br><span class="line"></span><br><span class="line"><span class="meta">@Nullable</span> <span class="keyword">private</span> ByteBuffer offHeapBuffer;</span><br><span class="line"></span><br><span class="line"><span class="keyword">private</span> <span class="keyword">long</span> address;</span><br><span class="line"></span><br><span class="line"><span class="keyword">private</span> <span class="keyword">final</span> <span class="keyword">long</span> addressLimit;</span><br><span class="line"></span><br><span class="line"><span class="keyword">private</span> <span class="keyword">final</span> <span class="keyword">int</span> size;</span><br><span class="line"></span><br><span class="line"><span class="meta">@Nullable</span> <span class="keyword">private</span> <span class="keyword">final</span> Object owner;</span><br><span class="line"></span><br><span class="line"><span class="meta">@Nullable</span> <span class="keyword">private</span> Runnable cleaner;</span><br><span class="line"></span><br></pre></td></tr></table></figure>
-
-<p>其中heapMemory和offHeapBuffer就是<code>MemorySegment</code> 所管理的内存，offHeapBuffer从字面意思就能看出来是表示堆外的内存 而heapMemory则表示堆内</p>
-<p><code>MemorySegmentFactory</code> 是创建<code>MemorySegment</code> 的工厂，它可以创建基于堆内的 也可以创建堆外的内存</p>
-<p>创建堆外的Memory</p>
-<figure class="highlight java"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br></pre></td><td class="code"><pre><span class="line"><span class="function"><span class="keyword">public</span> <span class="keyword">static</span> MemorySegment <span class="title">allocateOffHeapUnsafeMemory</span><span class="params">(</span></span></span><br><span class="line"><span class="params"><span class="function"><span class="keyword">int</span> size, Object owner, Runnable customCleanupAction)</span> </span>&#123;</span><br><span class="line"><span class="keyword">long</span> address = MemoryUtils.allocateUnsafe(size);</span><br><span class="line">    ByteBuffer offHeapBuffer = MemoryUtils.wrapUnsafeMemoryWithByteBuffer(address, size);</span><br><span class="line">    Runnable cleaner = MemoryUtils.createMemoryCleaner(address, customCleanupAction);</span><br><span class="line">    <span class="keyword">return</span> <span class="keyword">new</span> MemorySegment(offHeapBuffer, owner, <span class="keyword">false</span>, cleaner);</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
-
-<p>堆内</p>
-<figure class="highlight java"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br></pre></td><td class="code"><pre><span class="line"><span class="function"><span class="keyword">public</span> <span class="keyword">static</span> MemorySegment <span class="title">allocateUnpooledSegment</span><span class="params">(<span class="keyword">int</span> size, Object owner)</span> </span>&#123;</span><br><span class="line"><span class="keyword">return</span> <span class="keyword">new</span> MemorySegment(<span class="keyword">new</span> <span class="keyword">byte</span>[size], owner);</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
-
-<p>可以看到申请堆外内存需要传入一个cleaner对象，它适用于内存用完之后对内存进行一个回收，而堆内则不需要，他由jvm虚拟机自动进行一个回收。</p>
-<p>flink在什么地方使用这些内存？</p>
-<ol>
-<li><code>NetworkBuffer</code> ：flink在进行网络传输使用，每一个taskmanager在启动的时候都会生成一个<code>NetworkBufferPool</code>，在生成<code>NetworkBufferPool</code>时，会申请一定数量的内存用于网络传输，申请代码如下：</li>
-</ol>
-<figure class="highlight java"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">try</span>&#123;</span><br><span class="line"><span class="keyword">for</span>(<span class="keyword">int</span> i = <span class="number">0</span>; i &lt; numberOfSegmentsToAllocate; i++) &#123;</span><br><span class="line">availableMemorySegments.add(</span><br><span class="line">MemorySegmentFactory.allocateUnpooledOffHeapMemory(segmentSize, <span class="keyword">null</span>));</span><br><span class="line">&#125;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
-
-<p>  其中申请的segmentSize为numberOfSegmentsToAllocate，每一块的大小为segmentSize，flink网络算子之间的数据传输就是依靠这些申请而来的内存，这两个参数是怎么来的呢？是通过对最大的网络内存除以pagesize分别得到的segmentSize就等于segmentSize 最大网络内存可以通过参数taskmanager.memory.network.fraction指定。而且可以看allocateUnpooledOffHeapMemory方法申请的是堆外内存，说明flink网络传输所使用的内存是堆外内存,并且这些内存在申请的时候，并不像之前allocateOffHeapUnsafeMemory 方法那样需要生成一个cleaner 对象，说明这些网络内存申请了就不用销毁而是伴随着taskmanager的整个生命周期</p>
-<p>同理，在taskmanager中还有其他在taskmanager一初始化就申请内存并且伴随整个taskmanager生命周期的segmentbufferpool，具体代码我不过度介绍了。如：</p>
-<p><code>BatchShuffleReadBufferPool： **一个固定大小的 MemorySegment池，由批处理用于shuffle数据读取**</code></p>
-<ol>
-<li>状态后端和python的UDf，RocksDB State Backend 的本地内存，flink在使用rocksdb作为状态后端存储的时候rocksdb会使用这部分内存。同时python的UDF也使用的是这部分的内存，他们申请内存都是通过MemoryManager 的getSharedMemoryResourceForManagedMemory方法，这里不做详细说明，感兴趣的可以看一下这部分源码，</li>
-</ol>
-<figure class="highlight java"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">public</span>&lt;T extends AutoCloseable&gt;</span><br><span class="line">OpaqueMemoryResource&lt;T&gt;getSharedMemoryResourceForManagedMemory(</span><br><span class="line">String type,</span><br><span class="line">                LongFunctionWithException&lt;T, Exception&gt;initializer,</span><br><span class="line">                <span class="keyword">double</span> fractionToInitializeWith)</span><br><span class="line"><span class="keyword">throws</span> Exception&#123;&#125;</span><br></pre></td></tr></table></figure>
-
-<ol start="2">
-<li>批处理中的排序，分组和缓存部分，上面已经说过，每个slot都会分配一个MemoryManager ，而在task运行过程中，在批处理中，往往存在对大量数据进行排序或者分组的操作，这些操作需要申请一定数量的内存进行。也会通过MemoryManager 进行内存的申请。</li>
-</ol>
-
-      
-    </div>
-    <footer class="article-footer">
-      <a data-url="http://example.com/2022/01/29/flink%E7%9A%84%E5%86%85%E5%AD%98%E7%AE%A1%E7%90%86%E6%9C%BA%E5%88%B6%E7%AE%80%E5%8D%95%E8%A7%A3%E6%9E%90/" data-id="ckyzvppji0000hg9jf88v84s4" data-title="Flink内存管理源码解读" class="article-share-link">Share</a>
-      
-      
-      
-  <ul class="article-tag-list" itemprop="keywords"><li class="article-tag-list-item"><a class="article-tag-list-link" href="/tags/flink/" rel="tag">flink</a></li></ul>
-
-    </footer>
-  </div>
-  
-</article>
-
-
-
-  
-
+    <span class="page-number current">1</span><a class="page-number" href="/page/2/">2</a><a class="extend next" rel="next" href="/page/2/">Next &raquo;</a>
+  </nav>
 
 </section>
         
@@ -768,7 +1446,7 @@
   <div class="widget-wrap">
     <h3 class="widget-title">Tags</h3>
     <div class="widget">
-      <ul class="tag-list" itemprop="keywords"><li class="tag-list-item"><a class="tag-list-link" href="/tags/druid/" rel="tag">druid</a></li><li class="tag-list-item"><a class="tag-list-link" href="/tags/flink/" rel="tag">flink</a></li></ul>
+      <ul class="tag-list" itemprop="keywords"><li class="tag-list-item"><a class="tag-list-link" href="/tags/ID-MAPPING/" rel="tag">ID-MAPPING</a></li><li class="tag-list-item"><a class="tag-list-link" href="/tags/druid/" rel="tag">druid</a></li><li class="tag-list-item"><a class="tag-list-link" href="/tags/flink/" rel="tag">flink</a></li></ul>
     </div>
   </div>
 
@@ -778,7 +1456,7 @@
   <div class="widget-wrap">
     <h3 class="widget-title">Tag Cloud</h3>
     <div class="widget tagcloud">
-      <a href="/tags/druid/" style="font-size: 20px;">druid</a> <a href="/tags/flink/" style="font-size: 10px;">flink</a>
+      <a href="/tags/ID-MAPPING/" style="font-size: 10px;">ID-MAPPING</a> <a href="/tags/druid/" style="font-size: 20px;">druid</a> <a href="/tags/flink/" style="font-size: 15px;">flink</a>
     </div>
   </div>
 
@@ -800,23 +1478,23 @@
       <ul>
         
           <li>
-            <a href="/2022/02/19/druid%E4%B8%ADGroupbyQuery%E6%9F%A5%E8%AF%A2%E6%B5%81%E7%A8%8B%E8%A7%A3%E6%9E%90/">druid中GroupbyQuery查询流程解析</a>
+            <a href="/2022/02/20/%E5%9F%BA%E4%BA%8EFlink%E7%9A%84%E5%AE%9E%E6%97%B6%E6%95%B0%E4%BB%93%E6%8E%A2%E7%B4%A2/">基于Flink的实时数仓探索</a>
           </li>
         
           <li>
-            <a href="/2022/02/19/druid%E4%B8%ADTimeseriesQuery%E7%9A%84%E6%9F%A5%E8%AF%A2%E6%BA%90%E7%A0%81%E8%A7%A3%E6%9E%90/">druid中TimeseriesQuery的查询源码解析</a>
+            <a href="/2022/02/20/%E5%AE%9E%E6%97%B6ID-Mapping%E6%A0%87%E8%AF%86%E5%94%AF%E4%B8%80%E7%94%A8%E6%88%B7%E6%96%B9%E6%A1%88/">实时ID-Mapping标识唯一用户方案</a>
           </li>
         
           <li>
-            <a href="/2022/02/19/druid%E4%B8%AD%E7%9A%84%E5%B8%B8%E7%94%A8%E5%B7%A5%E5%85%B7%E7%B1%BB/">druid中的常用工具类</a>
+            <a href="/2022/02/19/druid%E4%B8%ADsql%E6%A8%A1%E5%9D%97%E5%88%86%E6%9E%90/">druid中sql模块分析</a>
           </li>
         
           <li>
-            <a href="/2022/02/11/APACHE-DRUID-%E6%9F%A5%E8%AF%A2%E8%BF%87%E7%A8%8B%E6%BA%90%E7%A0%81%E8%A7%A3%E6%9E%90/">APACHE DRUID 查询过程源码解析</a>
+            <a href="/2022/02/19/druid%E4%B8%AD%E5%8F%91%E5%B8%83%E5%8D%B8%E8%BD%BDsegment%E5%92%8C%E6%9C%8D%E5%8A%A1%E6%BA%90%E7%A0%81%E8%A7%A3%E6%9E%90/">druid中发布卸载segment和服务源码解析</a>
           </li>
         
           <li>
-            <a href="/2022/01/29/flink%E7%9A%84%E5%86%85%E5%AD%98%E7%AE%A1%E7%90%86%E6%9C%BA%E5%88%B6%E7%AE%80%E5%8D%95%E8%A7%A3%E6%9E%90/">Flink内存管理源码解读</a>
+            <a href="/2022/02/19/druid%E4%B8%AD%E8%81%9A%E5%90%88%E5%87%BD%E6%95%B0%E5%AE%9E%E7%8E%B0%E6%BA%90%E7%A0%81%E8%A7%A3%E6%9E%90/">druid中聚合函数实现源码解析</a>
           </li>
         
       </ul>

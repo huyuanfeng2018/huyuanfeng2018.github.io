@@ -1,0 +1,319 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  
+  
+  <title>druid中发布卸载segment和服务源码解析 | Big Face Cat</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
+  <meta name="description" content="整体概述在druid中通过zk管理发布对应的segment发布，以及相关服务的发布，主备选举。druid完成数据摄入会通过zk发布对应的segment，相关服务启动也会通过zk发布自己。 Announcer解析Announcer在druid中负责管理发布与卸载相关事件在zookeeper上。 初始化AnnouncerAnnouncer通过在AnnouncerModule中进行配置，Announce">
+<meta property="og:type" content="article">
+<meta property="og:title" content="druid中发布卸载segment和服务源码解析">
+<meta property="og:url" content="http://example.com/2022/02/19/druid%E4%B8%AD%E5%8F%91%E5%B8%83%E5%8D%B8%E8%BD%BDsegment%E5%92%8C%E6%9C%8D%E5%8A%A1%E6%BA%90%E7%A0%81%E8%A7%A3%E6%9E%90/index.html">
+<meta property="og:site_name" content="Big Face Cat">
+<meta property="og:description" content="整体概述在druid中通过zk管理发布对应的segment发布，以及相关服务的发布，主备选举。druid完成数据摄入会通过zk发布对应的segment，相关服务启动也会通过zk发布自己。 Announcer解析Announcer在druid中负责管理发布与卸载相关事件在zookeeper上。 初始化AnnouncerAnnouncer通过在AnnouncerModule中进行配置，Announce">
+<meta property="og:locale">
+<meta property="og:image" content="http://example.com/2022/02/19/druid%E4%B8%AD%E5%8F%91%E5%B8%83%E5%8D%B8%E8%BD%BDsegment%E5%92%8C%E6%9C%8D%E5%8A%A1%E6%BA%90%E7%A0%81%E8%A7%A3%E6%9E%90/image-20220219224907183.png">
+<meta property="og:image" content="http://example.com/2022/02/19/druid%E4%B8%AD%E5%8F%91%E5%B8%83%E5%8D%B8%E8%BD%BDsegment%E5%92%8C%E6%9C%8D%E5%8A%A1%E6%BA%90%E7%A0%81%E8%A7%A3%E6%9E%90/image-20220219225005776.png">
+<meta property="og:image" content="http://example.com/2022/02/19/druid%E4%B8%AD%E5%8F%91%E5%B8%83%E5%8D%B8%E8%BD%BDsegment%E5%92%8C%E6%9C%8D%E5%8A%A1%E6%BA%90%E7%A0%81%E8%A7%A3%E6%9E%90/image-20220219225101647.png">
+<meta property="og:image" content="http://example.com/2022/02/19/druid%E4%B8%AD%E5%8F%91%E5%B8%83%E5%8D%B8%E8%BD%BDsegment%E5%92%8C%E6%9C%8D%E5%8A%A1%E6%BA%90%E7%A0%81%E8%A7%A3%E6%9E%90/image-20220219225125474.png">
+<meta property="og:image" content="http://example.com/2022/02/19/druid%E4%B8%AD%E5%8F%91%E5%B8%83%E5%8D%B8%E8%BD%BDsegment%E5%92%8C%E6%9C%8D%E5%8A%A1%E6%BA%90%E7%A0%81%E8%A7%A3%E6%9E%90/image-20220219225139504.png">
+<meta property="og:image" content="http://example.com/2022/02/19/druid%E4%B8%AD%E5%8F%91%E5%B8%83%E5%8D%B8%E8%BD%BDsegment%E5%92%8C%E6%9C%8D%E5%8A%A1%E6%BA%90%E7%A0%81%E8%A7%A3%E6%9E%90/image-20220219225227270.png">
+<meta property="og:image" content="http://example.com/2022/02/19/druid%E4%B8%AD%E5%8F%91%E5%B8%83%E5%8D%B8%E8%BD%BDsegment%E5%92%8C%E6%9C%8D%E5%8A%A1%E6%BA%90%E7%A0%81%E8%A7%A3%E6%9E%90/image-20220219225253737.png">
+<meta property="og:image" content="http://example.com/2022/02/19/druid%E4%B8%AD%E5%8F%91%E5%B8%83%E5%8D%B8%E8%BD%BDsegment%E5%92%8C%E6%9C%8D%E5%8A%A1%E6%BA%90%E7%A0%81%E8%A7%A3%E6%9E%90/image-20220219225356732.png">
+<meta property="og:image" content="http://example.com/2022/02/19/druid%E4%B8%AD%E5%8F%91%E5%B8%83%E5%8D%B8%E8%BD%BDsegment%E5%92%8C%E6%9C%8D%E5%8A%A1%E6%BA%90%E7%A0%81%E8%A7%A3%E6%9E%90/image-20220219225405482.png">
+<meta property="og:image" content="http://example.com/2022/02/19/druid%E4%B8%AD%E5%8F%91%E5%B8%83%E5%8D%B8%E8%BD%BDsegment%E5%92%8C%E6%9C%8D%E5%8A%A1%E6%BA%90%E7%A0%81%E8%A7%A3%E6%9E%90/image-20220219225431507.png">
+<meta property="og:image" content="http://example.com/2022/02/19/druid%E4%B8%AD%E5%8F%91%E5%B8%83%E5%8D%B8%E8%BD%BDsegment%E5%92%8C%E6%9C%8D%E5%8A%A1%E6%BA%90%E7%A0%81%E8%A7%A3%E6%9E%90/image-20220219225501636.png">
+<meta property="article:published_time" content="2022-02-19T14:47:52.000Z">
+<meta property="article:modified_time" content="2022-02-19T15:10:50.007Z">
+<meta property="article:author" content="Lime">
+<meta property="article:tag" content="druid">
+<meta name="twitter:card" content="summary">
+<meta name="twitter:image" content="http://example.com/2022/02/19/druid%E4%B8%AD%E5%8F%91%E5%B8%83%E5%8D%B8%E8%BD%BDsegment%E5%92%8C%E6%9C%8D%E5%8A%A1%E6%BA%90%E7%A0%81%E8%A7%A3%E6%9E%90/image-20220219224907183.png">
+  
+    <link rel="alternate" href="/atom.xml" title="Big Face Cat" type="application/atom+xml">
+  
+  
+    <link rel="shortcut icon" href="/favicon.png">
+  
+  
+    
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/typeface-source-code-pro@0.0.71/index.min.css">
+
+  
+  
+<link rel="stylesheet" href="/css/style.css">
+
+  
+    
+<link rel="stylesheet" href="/fancybox/jquery.fancybox.min.css">
+
+  
+<meta name="generator" content="Hexo 6.0.0"></head>
+
+<body>
+  <div id="container">
+    <div id="wrap">
+      <header id="header">
+  <div id="banner"></div>
+  <div id="header-outer" class="outer">
+    <div id="header-title" class="inner">
+      <h1 id="logo-wrap">
+        <a href="/" id="logo">Big Face Cat</a>
+      </h1>
+      
+    </div>
+    <div id="header-inner" class="inner">
+      <nav id="main-nav">
+        <a id="main-nav-toggle" class="nav-icon"></a>
+        
+          <a class="main-nav-link" href="/">Home</a>
+        
+          <a class="main-nav-link" href="/archives">Archives</a>
+        
+      </nav>
+      <nav id="sub-nav">
+        
+          <a id="nav-rss-link" class="nav-icon" href="/atom.xml" title="RSS Feed"></a>
+        
+        <a id="nav-search-btn" class="nav-icon" title="Search"></a>
+      </nav>
+      <div id="search-form-wrap">
+        <form action="//google.com/search" method="get" accept-charset="UTF-8" class="search-form"><input type="search" name="q" class="search-form-input" placeholder="Search"><button type="submit" class="search-form-submit">&#xF002;</button><input type="hidden" name="sitesearch" value="http://example.com"></form>
+      </div>
+    </div>
+  </div>
+</header>
+
+      <div class="outer">
+        <section id="main"><article id="post-druid中发布卸载segment和服务源码解析" class="h-entry article article-type-post" itemprop="blogPost" itemscope itemtype="https://schema.org/BlogPosting">
+  <div class="article-meta">
+    <a href="/2022/02/19/druid%E4%B8%AD%E5%8F%91%E5%B8%83%E5%8D%B8%E8%BD%BDsegment%E5%92%8C%E6%9C%8D%E5%8A%A1%E6%BA%90%E7%A0%81%E8%A7%A3%E6%9E%90/" class="article-date">
+  <time class="dt-published" datetime="2022-02-19T14:47:52.000Z" itemprop="datePublished">2022-02-19</time>
+</a>
+    
+  </div>
+  <div class="article-inner">
+    
+    
+      <header class="article-header">
+        
+  
+    <h1 class="p-name article-title" itemprop="headline name">
+      druid中发布卸载segment和服务源码解析
+    </h1>
+  
+
+      </header>
+    
+    <div class="e-content article-entry" itemprop="articleBody">
+      
+        <h4 id="整体概述"><a href="#整体概述" class="headerlink" title="整体概述"></a>整体概述</h4><p>在druid中通过zk管理发布对应的segment发布，以及相关服务的发布，主备选举。druid完成数据摄入会通过zk发布对应的segment，相关服务启动也会通过zk发布自己。</p>
+<h5 id="Announcer解析"><a href="#Announcer解析" class="headerlink" title="Announcer解析"></a>Announcer解析</h5><p>Announcer在druid中负责管理发布与卸载相关事件在zookeeper上。</p>
+<h6 id="初始化Announcer"><a href="#初始化Announcer" class="headerlink" title="初始化Announcer"></a>初始化Announcer</h6><p>Announcer通过在AnnouncerModule中进行配置，Announcer拥有start和stop方法。伴随着Announcer的启动和停止。</p>
+<p><img src="/2022/02/19/druid%E4%B8%AD%E5%8F%91%E5%B8%83%E5%8D%B8%E8%BD%BDsegment%E5%92%8C%E6%9C%8D%E5%8A%A1%E6%BA%90%E7%A0%81%E8%A7%A3%E6%9E%90/image-20220219224907183.png" alt="image-20220219224907183"></p>
+<p>他的成员变量如上所示<br>①　curator是用于操作zk的客户端<br>②　factory是创建zk路径上缓存实体，可用于监听zk目录删除创建变更等动作<br>③　toAnnounce表示待发布的实例（在druid表示Segment和ServerRunner）<br>④　toUpdate表示待更新的实例信息<br>⑤　listeners存放zk路径对应的缓存实体<br>⑥　announcements保存发布的实例的zk路径以及其子路径下叶子节点中存放的数据<br>⑦　parentsIBuilt存放已经使用的路径</p>
+<h6 id="start方法解析"><a href="#start方法解析" class="headerlink" title="start方法解析"></a>start方法解析</h6><p>start方法会将toAnnounce集合中的所有待发布的实例通过announce方法进行发布，announce会将当前实例写入到对应的zk的path下完成发布。<br>announce方法步骤如下：</p>
+<ol>
+<li>首先判断当前状态是否为start状态，如果是非start状态则添加到toAnnounce中直接结束方法</li>
+<li>判断announcements中path是否已经存在，不存在则添加</li>
+<li>创建对zk节点的listeners，管理新增删除更新时候对Announcer中的元数据进行一个修改</li>
+</ol>
+<h6 id="stop方法解析"><a href="#stop方法解析" class="headerlink" title="stop方法解析"></a>stop方法解析</h6><p><img src="/2022/02/19/druid%E4%B8%AD%E5%8F%91%E5%B8%83%E5%8D%B8%E8%BD%BDsegment%E5%92%8C%E6%9C%8D%E5%8A%A1%E6%BA%90%E7%A0%81%E8%A7%A3%E6%9E%90/image-20220219225005776.png" alt="image-20220219225005776"></p>
+<p>跟start方法类似，也是判断当前启动的状态，然后将发布的段进行一个卸载，卸载操作在unannounce方法中，这里不做详细说明</p>
+<h5 id="Druid数据段（segmenmt）管理"><a href="#Druid数据段（segmenmt）管理" class="headerlink" title="Druid数据段（segmenmt）管理"></a>Druid数据段（segmenmt）管理</h5><p>​    本节将解析druid如何管理数据段，在druid中，所有的段需要在被发布之后才能被查询，本节将解析段的发布流程。</p>
+<p>druid中，段的发布与卸载是通过zookeeper来协调的，当一个新的段需要发布的时候，将这个段的信息，发送到zookeeper中的指定节点中，broker会监听这个节点，当节点发生变化时候，broker能收到信息，将新发布的段信息加载到内存中，整个段的发布就算完成。</p>
+<h6 id="段的发布"><a href="#段的发布" class="headerlink" title="段的发布"></a>段的发布</h6><p>负责段发布的接口为DataSegmentAnnouncer，接口如下：</p>
+<p><img src="/2022/02/19/druid%E4%B8%AD%E5%8F%91%E5%B8%83%E5%8D%B8%E8%BD%BDsegment%E5%92%8C%E6%9C%8D%E5%8A%A1%E6%BA%90%E7%A0%81%E8%A7%A3%E6%9E%90/image-20220219225101647.png" alt="image-20220219225101647"></p>
+<p>四个接口分别是发布一个段，卸载一个段，发布多个段和卸载多个段，在druid中BatchDataSegmentAnnouncer实现了DataSegmentAnnouncer接口，在BatchDataSegmentAnnouncer中他实现了announceSegment方法流程如下：</p>
+<ol>
+<li>判断segmentLookup中是否已经包含了这个段了，如果包含了直接跳过，不发布。</li>
+<li>往ChangeRequestHistory中添加本次段的一个变更请求</li>
+<li>判断是否跳过将段发布到zk中，如果跳过直接将段添加到segmentLookup集合当中</li>
+<li>将段对象序列化，并且判断是否超过了最大长度限制</li>
+<li>判断当前zk节点是否为空，不为空直接往zk节点中发布当前段，如果为空则需要初始化zk节点并且发布</li>
+<li>发布流程：遍历所有可用的zk节点，判断节点容量是否满载，未满载将段发布到节点中，满载则初始化一个新的节点用于数据段发布，并且将当前zk节点从可用zk节点集合中移出，发布的流程代码通过调用addSegment方法将segment对象插入到集合中并且序列化为二进制数据在调用Announcer.update更新zk节点数据，达到发布段的效果<br>所有的数据段都是要通过发布之后才能被查询到，当druid启动或者有新的数据接入的时候，都会将数据段发布。zeekeeper节点信息如下所示：</li>
+</ol>
+<p><img src="/2022/02/19/druid%E4%B8%AD%E5%8F%91%E5%B8%83%E5%8D%B8%E8%BD%BDsegment%E5%92%8C%E6%9C%8D%E5%8A%A1%E6%BA%90%E7%A0%81%E8%A7%A3%E6%9E%90/image-20220219225125474.png" alt="image-20220219225125474"></p>
+<p>​    在broker端，会通过BatchServerInventoryView这个类来监听zk节点，并且实时的更新段的信息,这些信息存储在serverInventoryView对象以及timelineServerView，serverInventoryView详细的监听逻辑在AbstractCuratorServerInventoryView的构造方法中，方法中会构造一个inventoryManager对象，这对象是对zkcuratorFramework的一个封装，具体不做详细的说明，在broker启动的时候就会启动这个加载serverInventoryView对zk节点进行监听，实时更新segment数据到内存中。其中封装成的对象为DruidServer，代表每个his或者实时节点实例，成员变量如下：</p>
+<p><img src="/2022/02/19/druid%E4%B8%AD%E5%8F%91%E5%B8%83%E5%8D%B8%E8%BD%BDsegment%E5%92%8C%E6%9C%8D%E5%8A%A1%E6%BA%90%E7%A0%81%E8%A7%A3%E6%9E%90/image-20220219225139504.png" alt="image-20220219225139504"></p>
+<p>一个DruidServer中包含了dataSources集合和segments以及相关的metadata信息，broker维护一个DruidServer内存集合来保存这些信息。</p>
+<h4 id="相关段数据信息在druid中的应用"><a href="#相关段数据信息在druid中的应用" class="headerlink" title="相关段数据信息在druid中的应用"></a>相关段数据信息在druid中的应用</h4><h5 id="broker接受查询判断interval属于哪一个段"><a href="#broker接受查询判断interval属于哪一个段" class="headerlink" title="broker接受查询判断interval属于哪一个段"></a>broker接受查询判断interval属于哪一个段</h5><p>在broker接受查询请求进行查询时会根据这些段的信息来判定请求将会发送到哪一台服务上去，会通过TimelineServerView来操作，其中在broker端的实现类为BrokerServerView，在初始化的时候会绑定一些回调函数，对应处理段发布，段卸载等操作时的处理，例如：当出现段发布的时候会触发的操作代码如下：</p>
+<p><img src="/2022/02/19/druid%E4%B8%AD%E5%8F%91%E5%B8%83%E5%8D%B8%E8%BD%BDsegment%E5%92%8C%E6%9C%8D%E5%8A%A1%E6%BA%90%E7%A0%81%E8%A7%A3%E6%9E%90/image-20220219225227270.png" alt="image-20220219225227270"></p>
+<p>在这里面每个数据源发布，都会被封装成一个VersionedIntervalTimeline对象，这个对象维护了这个段中的所有segment信息，在broker端接受请求的时候会通过TimelineServerView来拿到这些信息，最终决定将请求发送到哪一台机器计算。</p>
+<h5 id="段的卸载"><a href="#段的卸载" class="headerlink" title="段的卸载"></a>段的卸载</h5><p>段卸载和段加载方法类似：</p>
+<p><img src="/2022/02/19/druid%E4%B8%AD%E5%8F%91%E5%B8%83%E5%8D%B8%E8%BD%BDsegment%E5%92%8C%E6%9C%8D%E5%8A%A1%E6%BA%90%E7%A0%81%E8%A7%A3%E6%9E%90/image-20220219225253737.png" alt="image-20220219225253737"></p>
+<p>就是把段发布的流程反来了一遍，比较容易理解，这里不做详细概述了。</p>
+<h4 id="druid服务发布卸载"><a href="#druid服务发布卸载" class="headerlink" title="druid服务发布卸载"></a>druid服务发布卸载</h4><h5 id="简介"><a href="#简介" class="headerlink" title="简介"></a>简介</h5><p>​    druid中各个服务组件都需要发布才能被使用，所有的这些组件都继承于ServerRunnable抽象类，在启动的时候会调用start方法将自己发布可用，通过调用DruidNodeAnnouncer的announce方法发布。其中DruidNodeAnnouncer只有一个唯一的继承类为CuratorDruidNodeAnnouncer，druid通过zk来协调管理各个服务状态，当节点发布时，会将自己信息绑定到zk中，从而使得其他节点能够发现自己。</p>
+<h5 id="服务发布"><a href="#服务发布" class="headerlink" title="服务发布"></a>服务发布</h5><p>ServerRunnable是一个接口他的实现类如下所示：</p>
+<p><img src="/2022/02/19/druid%E4%B8%AD%E5%8F%91%E5%B8%83%E5%8D%B8%E8%BD%BDsegment%E5%92%8C%E6%9C%8D%E5%8A%A1%E6%BA%90%E7%A0%81%E8%A7%A3%E6%9E%90/image-20220219225356732.png" alt="image-20220219225356732"></p>
+<p>可见druid中的各个组件都继承了ServerRunnable，在ServerRunnable中存在一个静态内部类DiscoverySideEffectsProvider，他帮助CliXXX 类发布。他包括以下成员变量：</p>
+<p><img src="/2022/02/19/druid%E4%B8%AD%E5%8F%91%E5%B8%83%E5%8D%B8%E8%BD%BDsegment%E5%92%8C%E6%9C%8D%E5%8A%A1%E6%BA%90%E7%A0%81%E8%A7%A3%E6%9E%90/image-20220219225405482.png" alt="image-20220219225405482"></p>
+<ul>
+<li>druidNode中包含了当前节点信息包括servicename、host等</li>
+<li>announcer用于发布和卸载节点</li>
+<li>legacyAnnouncer旧版本用于发布节点的Announcer</li>
+<li>nodeRoles:当前集群中启用的角色集合</li>
+<li>serviceClasses：存放NodeRole和他对应的class集合</li>
+</ul>
+<p>具体的发布卸载逻辑如下：</p>
+<p><img src="/2022/02/19/druid%E4%B8%AD%E5%8F%91%E5%B8%83%E5%8D%B8%E8%BD%BDsegment%E5%92%8C%E6%9C%8D%E5%8A%A1%E6%BA%90%E7%A0%81%E8%A7%A3%E6%9E%90/image-20220219225431507.png" alt="image-20220219225431507"></p>
+<p>在服务启动和停止时候都会调用announce来发布或者unannounce来卸载节点。</p>
+<h6 id="主从选举"><a href="#主从选举" class="headerlink" title="主从选举"></a>主从选举</h6><p>​    在druid中coordinate和overload节点都遵循一主多从的架构模型，通过DruidLeaderSelector接口制定规范：</p>
+<p><img src="/2022/02/19/druid%E4%B8%AD%E5%8F%91%E5%B8%83%E5%8D%B8%E8%BD%BDsegment%E5%92%8C%E6%9C%8D%E5%8A%A1%E6%BA%90%E7%A0%81%E8%A7%A3%E6%9E%90/image-20220219225501636.png" alt="image-20220219225501636"></p>
+<ul>
+<li>getCurrentLeader：获取当前leader的id，如果没找找到leader则返回null</li>
+<li>isLeader：判断当前服务是否为leader</li>
+<li>localTerm：获取当前term值，每一次成为leader时term值都会+1</li>
+<li>registerListener：注册listener</li>
+<li>unregisterListener：解除listener</li>
+</ul>
+<p>在druid中实现为CuratorDruidLeaderSelector，借助zk来实现主从选举，具体代码不做详细阐述了。</p>
+
+      
+    </div>
+    <footer class="article-footer">
+      <a data-url="http://example.com/2022/02/19/druid%E4%B8%AD%E5%8F%91%E5%B8%83%E5%8D%B8%E8%BD%BDsegment%E5%92%8C%E6%9C%8D%E5%8A%A1%E6%BA%90%E7%A0%81%E8%A7%A3%E6%9E%90/" data-id="ckztz9ely0000e979h3sr53ki" data-title="druid中发布卸载segment和服务源码解析" class="article-share-link">Share</a>
+      
+      
+      
+  <ul class="article-tag-list" itemprop="keywords"><li class="article-tag-list-item"><a class="article-tag-list-link" href="/tags/druid/" rel="tag">druid</a></li></ul>
+
+    </footer>
+  </div>
+  
+    
+<nav id="article-nav">
+  
+    <a href="/2022/02/19/druid%E4%B8%ADsql%E6%A8%A1%E5%9D%97%E5%88%86%E6%9E%90/" id="article-nav-newer" class="article-nav-link-wrap">
+      <strong class="article-nav-caption">Newer</strong>
+      <div class="article-nav-title">
+        
+          druid中sql模块分析
+        
+      </div>
+    </a>
+  
+  
+    <a href="/2022/02/19/druid%E4%B8%AD%E8%81%9A%E5%90%88%E5%87%BD%E6%95%B0%E5%AE%9E%E7%8E%B0%E6%BA%90%E7%A0%81%E8%A7%A3%E6%9E%90/" id="article-nav-older" class="article-nav-link-wrap">
+      <strong class="article-nav-caption">Older</strong>
+      <div class="article-nav-title">druid中聚合函数实现源码解析</div>
+    </a>
+  
+</nav>
+
+  
+</article>
+
+
+</section>
+        
+          <aside id="sidebar">
+  
+    
+
+  
+    
+  <div class="widget-wrap">
+    <h3 class="widget-title">Tags</h3>
+    <div class="widget">
+      <ul class="tag-list" itemprop="keywords"><li class="tag-list-item"><a class="tag-list-link" href="/tags/ID-MAPPING/" rel="tag">ID-MAPPING</a></li><li class="tag-list-item"><a class="tag-list-link" href="/tags/druid/" rel="tag">druid</a></li><li class="tag-list-item"><a class="tag-list-link" href="/tags/flink/" rel="tag">flink</a></li></ul>
+    </div>
+  </div>
+
+
+  
+    
+  <div class="widget-wrap">
+    <h3 class="widget-title">Tag Cloud</h3>
+    <div class="widget tagcloud">
+      <a href="/tags/ID-MAPPING/" style="font-size: 10px;">ID-MAPPING</a> <a href="/tags/druid/" style="font-size: 20px;">druid</a> <a href="/tags/flink/" style="font-size: 15px;">flink</a>
+    </div>
+  </div>
+
+  
+    
+  <div class="widget-wrap">
+    <h3 class="widget-title">Archives</h3>
+    <div class="widget">
+      <ul class="archive-list"><li class="archive-list-item"><a class="archive-list-link" href="/archives/2022/02/">February 2022</a></li><li class="archive-list-item"><a class="archive-list-link" href="/archives/2022/01/">January 2022</a></li></ul>
+    </div>
+  </div>
+
+
+  
+    
+  <div class="widget-wrap">
+    <h3 class="widget-title">Recent Posts</h3>
+    <div class="widget">
+      <ul>
+        
+          <li>
+            <a href="/2022/02/20/%E5%9F%BA%E4%BA%8EFlink%E7%9A%84%E5%AE%9E%E6%97%B6%E6%95%B0%E4%BB%93%E6%8E%A2%E7%B4%A2/">基于Flink的实时数仓探索</a>
+          </li>
+        
+          <li>
+            <a href="/2022/02/20/%E5%AE%9E%E6%97%B6ID-Mapping%E6%A0%87%E8%AF%86%E5%94%AF%E4%B8%80%E7%94%A8%E6%88%B7%E6%96%B9%E6%A1%88/">实时ID-Mapping标识唯一用户方案</a>
+          </li>
+        
+          <li>
+            <a href="/2022/02/19/druid%E4%B8%ADsql%E6%A8%A1%E5%9D%97%E5%88%86%E6%9E%90/">druid中sql模块分析</a>
+          </li>
+        
+          <li>
+            <a href="/2022/02/19/druid%E4%B8%AD%E5%8F%91%E5%B8%83%E5%8D%B8%E8%BD%BDsegment%E5%92%8C%E6%9C%8D%E5%8A%A1%E6%BA%90%E7%A0%81%E8%A7%A3%E6%9E%90/">druid中发布卸载segment和服务源码解析</a>
+          </li>
+        
+          <li>
+            <a href="/2022/02/19/druid%E4%B8%AD%E8%81%9A%E5%90%88%E5%87%BD%E6%95%B0%E5%AE%9E%E7%8E%B0%E6%BA%90%E7%A0%81%E8%A7%A3%E6%9E%90/">druid中聚合函数实现源码解析</a>
+          </li>
+        
+      </ul>
+    </div>
+  </div>
+
+  
+</aside>
+        
+      </div>
+      <footer id="footer">
+  
+  <div class="outer">
+    <div id="footer-info" class="inner">
+      
+      &copy; 2022 Lime<br>
+      Powered by <a href="https://hexo.io/" target="_blank">Hexo</a>
+    </div>
+  </div>
+</footer>
+
+    </div>
+    <nav id="mobile-nav">
+  
+    <a href="/" class="mobile-nav-link">Home</a>
+  
+    <a href="/archives" class="mobile-nav-link">Archives</a>
+  
+</nav>
+    
+
+
+<script src="/js/jquery-3.4.1.min.js"></script>
+
+
+
+  
+<script src="/fancybox/jquery.fancybox.min.js"></script>
+
+
+
+
+<script src="/js/script.js"></script>
+
+
+
+
+
+  </div>
+</body>
+</html>
